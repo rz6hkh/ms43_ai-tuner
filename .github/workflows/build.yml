@@ -1,0 +1,87 @@
+name: Build Windows release
+
+# Builds ms43-ai-tuner.exe and ms43-ai-tuner-mcp.exe on Windows and attaches them to a
+# GitHub Release. Two triggers:
+#   * pushing a tag like v1.0.0  -> creates a release with that tag;
+#   * manually (Actions -> Run workflow) -> only builds the artifacts.
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write        # needed to create the release and upload files
+
+# Force UTF-8 on the runner: the console there is cp1252, and Russian-mode
+# output in selftest.py would crash with UnicodeEncodeError.
+env:
+  PYTHONUTF8: "1"
+  PYTHONIOENCODING: "utf-8"
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build dependencies
+        run: python -m pip install --upgrade pip pyinstaller reportlab
+
+      - name: Self-test
+        run: python selftest.py
+
+      - name: Fetch the MS4X Wiki reference (private build only)
+        # The wiki is third-party content and is not kept in git. The private
+        # build downloads it here and bundles it into the .exe; the public one
+        # skips this step and users download it from inside the app. A failed
+        # download only means a build without the reference.
+        if: github.repository == 'rz6hkh/ms43diff'
+        continue-on-error: true
+        run: >-
+          python -c "from ms43diff import wikicache as w;
+          r = w.download(folder=w.bundled_dir());
+          print('pages:', r['pages'], 'errors:', r['errors'])"
+
+      - name: Build .exe
+        run: python build_exe.py
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ms43-ai-tuner-windows
+          path: |
+            dist/*.exe
+            dist/*.bat
+            dist/*.zip
+          if-no-files-found: error
+
+      - name: Create release (tags only)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.exe
+            dist/*.bat
+            dist/*.zip
+          generate_release_notes: true
+          body: |
+            Windows build of ms43diff. No Python needed. Interface in English and Russian
+            (switch it in the **Language** menu).
+
+            **Easiest:** download `ms43-ai-tuner-windows.zip` and unpack it into one folder.
+
+            * `ms43-ai-tuner.exe` — the window: compare firmwares, colour maps, port plan, VE tuning, reference.
+            * `ms43-ai-tuner-mcp.exe` — MCP server so an AI assistant can read your firmware.
+            * `mcp-add.bat` — connects the MCP server to Claude Desktop: drop your `.xdf` and `.bin`
+              onto it (or double-click and pick them). `mcp-remove.bat` disconnects it.
+              The same is in the window: menu **AI assistant → Connect to Claude Desktop**.
+
+            The MS4X Wiki reference: if it is not bundled in this build, download it in the app
+            (Reference tab → Update from site).

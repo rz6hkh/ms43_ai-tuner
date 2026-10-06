@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MS43 AI-Tuner</title>
+<link rel="icon" href="icon.svg">
+<link rel="stylesheet" href="app.css">
+<script>window.BOOT = /*BOOT*/null;</script>
+</head>
+<body>
+<aside class="side">
+  <div class="brand"><div class="logo"></div><div><b>MS43 AI-Tuner</b><span id="ver"></span></div></div>
+  <div class="sect" id="lblProject"></div>
+  <div id="files"></div>
+  <div class="sect" id="lblTodo"></div>
+  <nav class="nav" id="nav"></nav>
+  <div class="foot">
+    <select id="lang" aria-label="Language"></select>
+    <span class="grow"></span>
+    <button id="btnLog"></button>
+  </div>
+</aside>
+<main class="main"><div class="wrap" id="view"></div></main>
+<aside class="drawer" id="drawer"><div class="in" id="drawerIn"></div></aside>
+<div class="busy" id="busy" hidden><div class="spin"></div><span id="busyText"></span></div>
+<div class="toast" id="toast" hidden></div>
+<script src="app.js"></script>
+</body>
+</html>

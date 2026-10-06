@@ -1,0 +1,26 @@
+# --- Local environment ---
+.mcp.json
+.claude/
+*.log
+# personal MCP launcher shortcuts (contain local firmware paths)
+ms43-*.bat
+
+# --- Offline copy of the MS4X Wiki ---
+# Third-party content (ms4x.net), not redistributed here.
+# Download it with:  ms43diff wiki --download
+ms43diff/wikidata/
+
+# --- Build output ---
+dist/
+build/
+reports/
+*.spec
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+
+# --- Firmware and definition files ---
+*.bin
+*.xdf
+*.adx
