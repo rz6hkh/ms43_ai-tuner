@@ -1,0 +1,65 @@
+name: Сборка Windows-релиза
+
+# Собирает ms43diff-gui.exe и ms43diff-mcp.exe на Windows и прикладывает их
+# к GitHub Release. Запускается двумя способами:
+#   * при пуше тега вида v1.0.0  — создаёт релиз с этим тегом;
+#   * вручную (вкладка Actions → Run workflow) — только соберёт артефакты.
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write        # нужно, чтобы создать релиз и загрузить файлы
+
+# Заставляем Python на раннере работать в UTF-8, иначе русские print
+# в selftest.py / build_exe.py падают с UnicodeEncodeError (stdout cp1252).
+env:
+  PYTHONUTF8: "1"
+  PYTHONIOENCODING: "utf-8"
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Забрать код
+        uses: actions/checkout@v4
+
+      - name: Поставить Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Установить зависимости сборки
+        run: python -m pip install --upgrade pip pyinstaller reportlab
+
+      - name: Проверка кода (самотест)
+        run: python selftest.py
+
+      - name: Собрать .exe
+        # Справочника MS4X Wiki в репозитории нет (чужой контент) — .exe
+        # собирается без него, пользователь качает его кнопкой в программе.
+        run: python build_exe.py
+
+      - name: Приложить .exe как артефакты сборки
+        uses: actions/upload-artifact@v4
+        with:
+          name: ms43diff-windows
+          path: dist/*.exe
+          if-no-files-found: error
+
+      - name: Создать релиз (только при пуше тега)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.exe
+          generate_release_notes: true
+          body: |
+            Автосборка Windows-версии ms43diff.
+
+            * `ms43diff-gui.exe` — окно: сравнение прошивок, карты, отладка по ШЛЗ, справочник.
+            * `ms43diff-mcp.exe` — MCP-сервер для нейросети (см. КАК_ПОЛЬЗОВАТЬСЯ_С_НЕЙРОНКОЙ.txt).
+
+            Справочник MS4X Wiki в комплект не входит — скачайте его в программе
+            («Справочник» → «Обновить с сайта»). Python на машине не нужен.
