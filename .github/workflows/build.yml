@@ -1,9 +1,9 @@
-name: Сборка Windows-релиза
+name: Build Windows release
 
-# Собирает ms43diff-gui.exe и ms43diff-mcp.exe на Windows и прикладывает их
-# к GitHub Release. Запускается двумя способами:
-#   * при пуше тега вида v1.0.0  — создаёт релиз с этим тегом;
-#   * вручную (вкладка Actions → Run workflow) — только соберёт артефакты.
+# Builds ms43diff-gui.exe and ms43diff-mcp.exe on Windows and attaches them to a
+# GitHub Release. Two triggers:
+#   * pushing a tag like v1.0.0  -> creates a release with that tag;
+#   * manually (Actions -> Run workflow) -> only builds the artifacts.
 on:
   push:
     tags:
@@ -11,10 +11,10 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write        # нужно, чтобы создать релиз и загрузить файлы
+  contents: write        # needed to create the release and upload files
 
-# Заставляем Python на раннере работать в UTF-8, иначе русские print
-# в selftest.py / build_exe.py падают с UnicodeEncodeError (stdout cp1252).
+# Force UTF-8 on the runner: the console there is cp1252, and Cyrillic print()
+# in selftest.py / build_exe.py would crash with UnicodeEncodeError.
 env:
   PYTHONUTF8: "1"
   PYTHONIOENCODING: "utf-8"
@@ -23,43 +23,43 @@ jobs:
   build-windows:
     runs-on: windows-latest
     steps:
-      - name: Забрать код
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Поставить Python
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
-      - name: Установить зависимости сборки
+      - name: Install build dependencies
         run: python -m pip install --upgrade pip pyinstaller reportlab
 
-      - name: Проверка кода (самотест)
+      - name: Self-test
         run: python selftest.py
 
-      - name: Собрать .exe
-        # Справочника MS4X Wiki в репозитории нет (чужой контент) — .exe
-        # собирается без него, пользователь качает его кнопкой в программе.
+      - name: Build .exe
+        # The MS4X Wiki is not in the repo (third-party content), so the .exe is
+        # built without it; users download it from inside the app.
         run: python build_exe.py
 
-      - name: Приложить .exe как артефакты сборки
+      - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: ms43diff-windows
           path: dist/*.exe
           if-no-files-found: error
 
-      - name: Создать релиз (только при пуше тега)
+      - name: Create release (tags only)
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           files: dist/*.exe
           generate_release_notes: true
           body: |
-            Автосборка Windows-версии ms43diff.
+            Windows build of ms43diff. No Python needed.
 
-            * `ms43diff-gui.exe` — окно: сравнение прошивок, карты, отладка по ШЛЗ, справочник.
-            * `ms43diff-mcp.exe` — MCP-сервер для нейросети (см. КАК_ПОЛЬЗОВАТЬСЯ_С_НЕЙРОНКОЙ.txt).
+            * `ms43diff-gui.exe` — the window: compare firmwares, colour maps, transfer plan, VE dial-in, reference.
+            * `ms43diff-mcp.exe` — MCP server so an AI can read your firmware (setup: HOW_TO_USE_WITH_AI.md).
 
-            Справочник MS4X Wiki в комплект не входит — скачайте его в программе
-            («Справочник» → «Обновить с сайта»). Python на машине не нужен.
+            The MS4X Wiki reference is not bundled — download it in the app
+            (Reference tab → Update from site).

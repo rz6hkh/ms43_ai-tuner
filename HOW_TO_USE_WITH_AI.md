@@ -1,6 +1,6 @@
 # ms43diff — how to use it, and how to connect an AI
 
-Plain steps. Russian version: `КАК_ПОЛЬЗОВАТЬСЯ_С_НЕЙРОНКОЙ.txt`.
+Plain steps.
 
 This program reads your MS43 firmware and shows, in plain language, what each
 setting is and does. It can also hand all of that to an AI so you can *ask*
