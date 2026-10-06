@@ -72,16 +72,18 @@ jobs:
             dist/*.zip
           generate_release_notes: true
           body: |
-            Windows build of ms43diff. No Python needed. Interface in English and Russian
-            (switch it in the **Language** menu).
+            Windows build of MS43 AI-Tuner. No Python needed. Interface in English and Russian
+            (switch at the bottom left of the window).
 
-            **Easiest:** download `ms43-ai-tuner-windows.zip` and unpack it into one folder.
+            **Easiest:** download `ms43-ai-tuner-windows.zip`, unpack it into one folder and run
+            `ms43-ai-tuner.exe`.
 
-            * `ms43-ai-tuner.exe` — the window: compare firmwares, colour maps, port plan, VE tuning, reference.
-            * `ms43-ai-tuner-mcp.exe` — MCP server so an AI assistant can read your firmware.
-            * `mcp-add.bat` — connects the MCP server to Claude Desktop: drop your `.xdf` and `.bin`
-              onto it (or double-click and pick them). `mcp-remove.bat` disconnects it.
-              The same is in the window: menu **AI assistant → Connect to Claude Desktop**.
+            * `ms43-ai-tuner.exe` — the window: compare firmware, heat-map views, versions and
+              porting plan, patches, VE tuning, the MS4X Wiki reference, the AI assistant.
+            * `ms43-ai-tuner-mcp.exe` — the MCP server through which Claude reads your firmware.
+            * `mcp-add.bat` / `mcp-remove.bat` — connect / disconnect it to Claude Desktop by
+              dropping your `.xdf` and `.bin` onto it. The same is in the window:
+              **AI assistant → Claude Desktop → Connect / update**.
 
-            The MS4X Wiki reference: if it is not bundled in this build, download it in the app
-            (Reference tab → Update from site).
+            The MS4X Wiki reference: if this build does not carry it, download it in the app
+            (**Reference → Update from site**).
