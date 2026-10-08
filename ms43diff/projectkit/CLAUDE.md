@@ -94,6 +94,7 @@ word-by-word translation, `translate: true`, is rough).
 Edit (draft only): `edit_propose`, `edit_list`, `edit_remove`, `edit_show`.
 Logs: `log_list`, `log_info`, `log_modes`, `log_rows`, `log_map_hits`, `log_compare`, `log_show`.
 Car: `car_info`, `car_calibrate` (gears from steady driving in the logs), `car_propose`.
+Logger: `logger_info` (the ADX, its fit with the firmware, the last connection check).
 
 ## Where things are kept
 
@@ -116,3 +117,4 @@ Car: `car_info`, `car_calibrate` (gears from steady driving in the logs), `car_p
 - `fuel-trims` — what fuel trims and lambda control say, and what not to conclude.
 - `wot-pull` — plan a full-load pull on a track/dyno and what to log.
 - `change-request` — how to turn findings into a safe draft for the window.
+- `logger-debug` — get the window's logger talking to the ECU (status codes, ADX, modes).

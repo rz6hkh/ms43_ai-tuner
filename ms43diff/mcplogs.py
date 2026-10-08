@@ -868,3 +868,62 @@ TOOLS.append({
         "required": ["log"]},
     "_fn": tool_log_modes,
 })
+
+
+def tool_logger_info(args: Dict) -> str:
+    from .webui import modes
+
+    ws = _ws()
+    role = str(args.get("firmware") or "bin_a")
+    a = modes._adx_view(ws, role)
+    out = [t("Logger definition (ADX): {name}", name=a.get("name") or "—")]
+    if a.get("request"):
+        out.append("  " + t("data request {req}, {n} channels, base rate {baud}, fast rate: {fast}",
+                            req=a["request"], n=a.get("channels"), baud=a.get("baud"),
+                            fast=t("yes") if a.get("fast") else t("no")))
+    if a.get("check"):
+        out.append("  " + t("fits the firmware: {state} — {text}", state=a["check"]["state"],
+                            text=a["check"]["text"]))
+    out.append(t("Firmware in the window ({role}): {fw}; engine: {engine}", role=role,
+                 fw=a.get("firmware") or "?", engine=a.get("engine") or "?"))
+    pack = a.get("pack") or []
+    out.append(t("ADX pack ({folder}): {list}", folder=a.get("pack_folder"),
+                 list=", ".join(f"{p['name']} ({p['request']})" for p in pack) or "—"))
+    out.append(t("Suggested: {name}; standard (0B 03) fallback: {std}",
+                 name=a.get("recommended") or "—", std=a.get("standard") or t("none")))
+    test = getattr(ws, "logger_test", None)
+    if test:
+        out.append("")
+        out.append(t("Last \"Check the connection\": {result}", result=t("works, mode {mode}", mode=test.get("mode"))
+                     if test.get("ok") else t("failed: {error}", error=test.get("error"))))
+        if test.get("ident"):
+            out.append("  ident: " + str(test["ident"].get("text") or test["ident"].get("hex")))
+        for step in test.get("steps") or []:
+            mark = {True: "OK", False: "NO"}.get(step.get("ok"), "--")
+            out.append(f"  [{mark}] {step.get('text')}")
+        if test.get("journal_file"):
+            out.append("  " + t("journal: logs/{file}", file=test["journal_file"]))
+    rec = getattr(ws, "recorder", None)
+    if rec is not None:
+        st = rec.status
+        out.append("")
+        out.append(t("Recorder: {state}, mode {mode}, {rows} rows, {rate} Hz, missed {errors}, "
+                     "reconnects {rec}", state=st.get("state"), mode=st.get("mode") or "—",
+                     rows=st.get("rows"), rate=st.get("rate"), errors=st.get("errors"),
+                     rec=st.get("reconnects")))
+        if st.get("message"):
+            out.append("  " + str(st["message"]))
+    return "\n".join(out)
+
+
+TOOLS.append({
+    "name": "logger_info",
+    "description": "The window's own logger: the chosen ADX (data request 0B 03 standard / 0B B0 "
+                   "extended, fast rate), whether the firmware in the car supports it (logging "
+                   "patch, MS43X), the ADX pack and the suggested ADX, the last \"Check the "
+                   "connection\" (ident, each step, the mode a recording uses, the journal file) "
+                   "and the recorder state. Read-only: only the owner connects and records.",
+    "inputSchema": {"type": "object", "properties": {
+        "firmware": {"type": "string", "description": "bin_a (default), bin_b or bin2: the firmware in the car"}}},
+    "_fn": tool_logger_info,
+})

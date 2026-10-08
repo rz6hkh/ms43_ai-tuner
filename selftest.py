@@ -617,6 +617,9 @@ def _check_logs(f: dict, lang: str, call, base: str, token: str) -> list:
                call("logs_view", {"log": name})["conditions"]["changed"]),
               ([], True, False, "nothing"))
         no_car = tool("log_modes", log=name)
+        linfo = tool("logger_info")
+        check(f"[{lang}] MCP logger_info: the ADX, the pack and the fallback",
+              ("ADX" in linfo, "0B 03" in linfo), (True, True))
         call("ai_car", {"car": {"ratios": "4.21 2.49 1.67 1.24 1.00", "final_drive": "2.93",
                                 "circumference": "1.872", "speed_sensor": "differential"}})
         car_text = tool("car_info")
@@ -784,17 +787,58 @@ def test_logger() -> None:
         adx_path = os.path.join(tmp, "test.adx")
         with open(adx_path, "w", encoding="utf-8") as fh:
             fh.write(tests_fixtures.ADX)
+        stock_path = os.path.join(tmp, "stock.adx")
+        with open(stock_path, "w", encoding="utf-8") as fh:
+            fh.write(tests_fixtures.STOCK_ADX)
         ecu = tests_fixtures.FakeEcu()
-        res = ds2logger.test_connection(adx_path, lambda adx: ecu)
-        check("logger: connection test reads a packet", (res["ok"], res["values"]["Engine Speed"]),
-              (True, 801.0))
+        res = ds2logger.test_connection(adx_path, lambda adx: ecu, None, stock_path)
+        check("logger: connection test: ident, the request at 9600, then the fast mode",
+              (res["ok"], res["mode"], res["ident"]["part"], res["values"]["Engine Speed"]),
+              (True, "fast", "7545150", 802.0))
         check("logger: the journal has every step, the ECU is back at 9600",
               ([l["text"] for l in res["journal"] if l["dir"] in ("tx", "rx")], ecu.ecu_baud),
-              (["FASTCMD", "OKREPLY", "DATAREQUEST", "DATAREPLY", "SLOWCMD", "OKREPLYFAST"], 9600))
+              (["IDENT", "IDENT", "DATAREQUEST", "DATAREPLY", "FASTCMD", "OKREPLY", "DATAREQUEST",
+                "DATAREPLY", "SLOWCMD", "OKREPLYFAST"], 9600))
         silent = tests_fixtures.FakeEcu()
         silent.ecu_baud = 1
         res = ds2logger.test_connection(adx_path, lambda adx: silent)
         check("logger: no ECU is reported, not hidden", (res["ok"], bool(res["error"])), (False, True))
+        running = tests_fixtures.FakeEcu()
+        running.engine_running = True
+        res = ds2logger.test_connection(adx_path, lambda adx: running, None, stock_path)
+        check("logger: fast rate refused (A2, engine running) -> the same ADX at 9600",
+              (res["ok"], res["mode"], any("refused" in st["text"] for st in res["steps"])),
+              (True, "slow", True))
+        bare = tests_fixtures.FakeEcu()
+        bare.patched = False
+        res = ds2logger.test_connection(adx_path, lambda adx: bare, None, stock_path)
+        check("logger: 0B B0 unknown (B0, no patch) -> the standard ADX",
+              (res["ok"], res["mode"], res["adx_used"]), (True, "stock", "stock.adx"))
+        bare = tests_fixtures.FakeEcu()
+        bare.patched = False
+        res = ds2logger.test_connection(adx_path, lambda adx: bare)
+        check("logger: no patch and no standard ADX: a clear refusal",
+              (res["ok"], "DS2 Logging Feature Enhancement" in res["error"]), (False, True))
+        bare = tests_fixtures.FakeEcu()
+        bare.patched = False
+        rec = ds2logger.Recorder(adx_path, lambda adx: bare, os.path.join(tmp, "logs_bare"))
+        rec.start()
+        time.sleep(1.5)
+        rec.stop()
+        check("logger: a refusal stops the recording, no reconnect loop",
+              (rec.status["state"], rec.status["reconnects"], len(bare.sent) < 10), ("refused", 0, True))
+        bare = tests_fixtures.FakeEcu()
+        bare.patched = False
+        bare.engine_running = True
+        done_stock = []
+        rec = ds2logger.Recorder(adx_path, lambda adx: bare, os.path.join(tmp, "logs_stock"),
+                                 done_stock.append, stock_path)
+        rec.start()
+        time.sleep(1.0)
+        rec.stop()
+        check("logger: records with the standard ADX when the extended request is unknown",
+              (rec.status["mode"], rec.status["rows"] > 10, len(done_stock),
+               os.path.basename(rec.adx_path)), ("stock", True, 1, "stock.adx"))
         session = ds2logger.Session(Adx(adx_path), tests_fixtures.FakeEcu(), ds2logger.Journal(None))
         try:
             session.send(session.adx.commands["ERASE"])
@@ -817,12 +861,94 @@ def test_logger() -> None:
         log = tplog.load(done[0])
         journal = [json.loads(line) for line in open(rec.raw_path, encoding="utf-8")]
         check("logger: the CSV loads like a TunerPro log and shows the gap",
-              (log.col("Engine Speed")[0], len(tplog.quality(log)["gaps"]) >= 1), (801.0, True))
+              (log.col("Engine Speed")[0], len(tplog.quality(log)["gaps"]) >= 1), (802.0, True))
         check("logger: the raw journal notes the loss and the reconnect",
-              ["connection lost, reconnecting" in [j.get("text") for j in journal],
-               sum(1 for j in journal if j.get("text") == "connected")], [True, 2])
+              ["connection lost (no answer), reconnecting" in [j.get("text") for j in journal],
+               sum(1 for j in journal if str(j.get("text", "")).startswith("connected"))], [True, 2])
         check("logger: the ECU is left at 9600 after stop", ecu.ecu_baud, 9600)
     finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_adx_pack() -> None:
+    """The ADX pack: the list from the wiki pages, the download, the standard ADX, a suggestion."""
+    import shutil
+    import tempfile
+
+    import tests_fixtures
+    from ms43diff import adxpack, logcheck, wikicache
+
+    print("\n--- ADX pack ---")
+    tmp = tempfile.mkdtemp(prefix="ms43adx_")
+    saved = wikicache.user_dir
+    try:
+        wikicache.user_dir = lambda: os.path.join(tmp, "wiki")
+        pages = {
+            "Logger_Definition_Files": '<a href="/index.php?title=File:Siemens_MS42_Extended_Log_v1.7_M52TUB25.adx">x</a>'
+                                       '<a href="/index.php?title=File:Siemens_MS43_Extended_Log_v2.9_M54B30.adx">x</a>'
+                                       '<a href="/index.php?title=File:Siemens_MS43_Extended_Log_v2.9_M54B25.adx">x</a>',
+            "MS43X_Custom_Firmware": '<a href="/index.php?title=File:Siemens_MS43_MS43X001_Logging.adx">x</a>'
+                                     '<a href="/index.php?title=File:Siemens_MS43_MS43X001_64K.xdf">x</a>',
+            "TunerPro_MS43_Community_Patchlist":
+                '<a href="/index.php?title=File:Siemens_MS43_MS430069_Community_Patchlist_v2.9.2.xdf">x</a>'
+                '<a href="/index.php?title=File:Siemens_MS43_MS430069_Community_Patchlist_v2.5.xdf">x</a>'}
+
+        def fetch(url, timeout):
+            return next(v for k, v in pages.items() if url.endswith(k))
+
+        def fetch_bytes(url, timeout):
+            if url.endswith(".xdf"):
+                return b"<XDFFORMAT version='1.60'></XDFFORMAT>"
+            if "M54B25" in url:
+                return b"<html>blocked</html>"
+            return tests_fixtures.ADX.encode("utf-8")
+
+        names = adxpack.listing(fetch)
+        check("ADX pack: MS43 ADX and the newest patchlist, no MS42, no firmware XDF",
+              sorted(names), sorted(["Siemens_MS43_Extended_Log_v2.9_M54B30.adx",
+                                     "Siemens_MS43_Extended_Log_v2.9_M54B25.adx",
+                                     "Siemens_MS43_MS43X001_Logging.adx",
+                                     "Siemens_MS43_MS430069_Community_Patchlist_v2.9.2.xdf"]))
+        res = adxpack.download(fetch_bytes=fetch_bytes, fetch=fetch)
+        check("ADX pack: downloaded, a non-ADX answer refused", (len(res["files"]), len(res["errors"])), (3, 1))
+        check("ADX pack: the program's own standard ADX until the pack has one",
+              os.path.basename(adxpack.standard_adx()), adxpack.BUILTIN_STANDARD)
+        from ms43diff.adx import Adx
+        from ms43diff.ds2logger import adx_kind
+        std = Adx(adxpack.standard_adx())
+        reply = bytes.fromhex("12 2D A0 02 70 00 00 00 00 38 00 32 72 B3 9A 5F AE 01 DE F8 20 5E EC 8F 77 "
+                              "89 7F FB 80 00 FE FE 00 00 14 83 06 20 07 1E 0D 2F 6E 87 EE")
+        values = std.decode(std.listen_by_name["DATAREPLY"].idhash, reply[3:44])
+        check("standard ADX: 0B 03 at 9600, rpm / coolant / lambda integrator from a real reply",
+              (adx_kind(std)["request"], std.baud, values["Engine Speed"], round(values["Coolant Temperature"], 1),
+               round(values["Lambda Integrator Bank 1"], 1)), ("0B 03", 9600, 624.0, 86.2, -0.0))
+        rec = os.path.join(tmp, "rec.jsonl")
+        with open(rec, "w", encoding="utf-8") as fh:
+            for i in range(20):
+                fh.write('{"t": %.3f, "hex": "%s"}\n' % (i * 0.12, reply.hex(" ").upper()))
+        bin_path = os.path.join(tmp, "fw.bin")
+        with open(bin_path, "wb") as fh:
+            fh.write(b"\0" * 65536)
+        from ms43diff import tplog
+        dest = tplog.add_log(rec, os.path.join(tmp, "logs"), bin_path, bin_path, "", "")
+        check("a raw 0B 03 recording (.jsonl) is added as a log with the standard ADX",
+              (tplog.quality(tplog.load(dest))["rows"], os.path.basename(tplog.read_binding(dest)["adx"])),
+              (20, adxpack.BUILTIN_STANDARD))
+        with open(os.path.join(adxpack.folder(), "my_standard.adx"), "w", encoding="utf-8") as fh:
+            fh.write(tests_fixtures.STOCK_ADX)
+        check("ADX pack: a 0B 03 ADX in the folder is the standard one",
+              os.path.basename(adxpack.standard_adx()), "my_standard.adx")
+        check("ADX pack: the suggestion follows X001 and the engine",
+              (os.path.basename(adxpack.recommend("43X001", "")),
+               os.path.basename(adxpack.recommend("430069", adxpack.engine_of("E30 M54B30 swap")))),
+              ("Siemens_MS43_MS43X001_Logging.adx", "Siemens_MS43_Extended_Log_v2.9_M54B30.adx"))
+        check("ADX check: the standard request fits every MS43",
+              logcheck.check(os.path.join(adxpack.folder(), "my_standard.adx"), "")["state"], "ok")
+        check("ADX check: the extended one needs the firmware to tell",
+              logcheck.check(os.path.join(adxpack.folder(), "Siemens_MS43_MS43X001_Logging.adx"), "")["state"],
+              "unknown")
+    finally:
+        wikicache.user_dir = saved
         shutil.rmtree(tmp, ignore_errors=True)
 
 
@@ -1186,6 +1312,7 @@ def main() -> int:
     test_edits_core()
     test_wiki_cache()
     test_xdl()
+    test_adx_pack()
     test_logger()
     test_end_to_end()
     if len(sys.argv) >= 3:

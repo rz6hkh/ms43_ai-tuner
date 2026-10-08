@@ -399,10 +399,16 @@ def jsonl_to_csv(jsonl_path: str, adx_path: str, csv_path: str, title: str = "")
                 rec = json.loads(line)
             except ValueError:
                 continue
-            pk = by_name.get(rec.get("text", ""))
-            if rec.get("dir") != "rx" or pk is None or pk.idhash not in data_packets:
-                continue
             raw = bytes.fromhex(rec.get("hex", "").replace(" ", ""))
+            if "dir" in rec:                      # the program's own journal
+                pk = by_name.get(rec.get("text", ""))
+                if rec.get("dir") != "rx" or pk is None or pk.idhash not in data_packets:
+                    continue
+            else:                                 # a plain {"t", "hex"} recording: match the header
+                pk = next((p for p in by_name.values() if p.idhash in data_packets and p.header
+                           and raw.startswith(p.header) and len(raw) >= len(p.header) + p.size), None)
+                if pk is None:
+                    continue
             start = len(pk.header)
             rows.append((float(rec.get("t", 0)), pk.idhash, raw[start:start + pk.size]))
     if not rows:

@@ -622,6 +622,31 @@ def add_log(src: str, logs_dir: str, bin_path: str, xdf_path: str, note: str = "
         extra = {"adx": os.path.abspath(adx_path), "raw": os.path.relpath(raw, logs_dir),
                  "decoder": adx.DECODER_VERSION,
                  "decoded_rows": info["rows"], "bad_packets": info["bad_packets"]}
+    elif ext.lower() == ".jsonl":
+        # a raw recording ({"t", "hex"} per line: the program's own journal, or a script's):
+        # decoded with the chosen ADX, else with the standard 0B 03 one
+        from . import adx, adxpack
+
+        dest = _free_path(logs_dir, base, ".csv")
+        raw_dir = os.path.join(logs_dir, "raw")
+        os.makedirs(raw_dir, exist_ok=True)
+        raw = _free_path(raw_dir, os.path.splitext(os.path.basename(dest))[0], ".jsonl")
+        info, used, first_error = None, "", ""
+        for candidate in (adx_path, adxpack.standard_adx()):
+            if not candidate or not os.path.isfile(candidate) or candidate == used:
+                continue
+            try:
+                info = adx.jsonl_to_csv(src, candidate, dest)
+                used = candidate
+                break
+            except (adx.AdxError, OSError, ValueError) as exc:
+                first_error = first_error or str(exc)
+        if info is None:
+            raise LogError(first_error or t("Choose the ADX the recording was made with."))
+        shutil.copyfile(src, raw)
+        load(dest)
+        extra = {"adx": os.path.abspath(used), "raw": os.path.relpath(raw, logs_dir),
+                 "decoder": adx.DECODER_VERSION, "decoded_rows": info["rows"]}
     else:
         load(src)                                     # refuse a file that is not a log
         dest = _free_path(logs_dir, base, ext or ".csv", src)

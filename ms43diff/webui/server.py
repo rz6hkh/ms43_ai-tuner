@@ -44,6 +44,7 @@ ROLES = {
     "xdf2": ("proj_xdf2", "x_xdf_b"),
     "bin2": ("proj_bin2", "x_bin_b"),
     "patchlist": ("proj_patchlist", "pt_xdf"),
+    "adx": ("log_adx", "log_adx"),
 }
 XDF_ROLES = {"xdf", "xdf2", "patchlist"}
 BIN_ROLES = ("bin_a", "bin_b", "bin2")
@@ -172,6 +173,8 @@ def file_info(state: State, role: str) -> Dict[str, Any]:
         info["error"] = t("File not found")
         return info
     try:
+        if role == "adx":
+            return _adx_info(state, path, info)
         if role in XDF_ROLES:
             xdf = state.xdf(path)
             info["tag"] = xdf.title
@@ -200,6 +203,32 @@ def file_info(state: State, role: str) -> Dict[str, Any]:
             info["tag"] = _header_id(binf)
     except Exception as exc:  # noqa: BLE001 - shown on the card
         info["error"] = str(exc)
+    return info
+
+
+def _adx_info(state: State, path: str, info: Dict[str, Any]) -> Dict[str, Any]:
+    """The logger definition: what it asks the ECU, and whether firmware A supports it."""
+    from .. import logcheck
+
+    summary = logcheck.adx_summary(path)
+    info["tag"] = summary["request"] or "?"
+    info["meta"] = t("{n} channels · {kind}", n=summary["channels"],
+                     kind=t("extended, fast rate") if summary["extended"] and summary["fast"] else
+                     t("extended") if summary["extended"] else t("standard"))
+    patchlist = None
+    if state.paths.get("patchlist"):
+        try:
+            patchlist = state.xdf(state.paths["patchlist"])
+        except Exception:  # noqa: BLE001 - the check just knows less
+            patchlist = None
+    result = logcheck.check(path, state.paths.get("bin_a", ""), _xdf_for(state, "bin_a"), patchlist)
+    if result["state"] == "ok":
+        info["ok"] = True
+        info["meta"] += " · " + result["text"]
+    elif result["state"] == "warn":
+        info["warning"] = result["text"]
+    else:
+        info["meta"] += " · " + result["text"]
     return info
 
 
@@ -500,6 +529,8 @@ def page_strings() -> Dict[str, str]:
 # ---------------------------------------------------------------------------
 
 def _file_types(role: str):
+    if role == "adx":
+        return [(t("TunerPro logger definition"), "*.adx"), (t("All files"), "*.*")]
     if role in XDF_ROLES:
         return [(t("TunerPro definitions"), "*.xdf"), (t("All files"), "*.*")]
     return [(t("Firmware files"), "*.bin"), (t("All files"), "*.*")]
@@ -525,7 +556,8 @@ def api_pick(state: State, body: Dict) -> Dict:
     titles = {"xdf": t("Choose the XDF definition"), "xdf2": t("Choose the XDF definition"),
               "bin_a": t("Choose firmware A"), "bin_b": t("Choose firmware B"),
               "bin2": t("Choose the firmware of the other version"),
-              "patchlist": t("Choose the patchlist XDF")}
+              "patchlist": t("Choose the patchlist XDF"),
+              "adx": t("Choose the logger definition (ADX)")}
     if not _PICKING.acquire(blocking=False):
         return api_state(state, body)   # a dialog is already open
     try:
@@ -736,7 +768,7 @@ _MODE_CALLS = ("browse", "cross", "port", "patches",
                "edits_state", "edits_remove", "edits_create", "edits_use",
                "wiki", "wiki_section", "wiki_download", "wiki_progress", "wiki_import", "wiki_export", "wiki_add", "save_report",
                "logs_state", "logs_add", "logs_pick_adx", "logs_redecode",
-               "logger_state", "logger_test", "logger_start", "logger_stop", "logs_view", "logs_series", "logs_map", "logs_file", "logs_note")
+               "logger_state", "logger_test", "logger_start", "logger_stop", "logger_pack", "logger_use_adx", "logs_view", "logs_series", "logs_map", "logs_file", "logs_note")
 
 API: Dict[str, Callable[[State, Dict], Dict]] = {
     "state": api_state, "pick": api_pick, "clear": api_clear, "compare": api_compare,
@@ -883,6 +915,9 @@ def run(open_browser: bool = True) -> int:
                     break
     except KeyboardInterrupt:
         pass
+    recorder = getattr(server.state, "recorder", None)
+    if recorder is not None and recorder.running:
+        recorder.stop()            # disconnects the ECU and releases the COM port
     if server.state._ai is not None:
         server.state._ai.stop_all()
     server.shutdown()

@@ -304,6 +304,9 @@ class AiManager:
         if done == "desktop":
             return (t("Opened in the Claude desktop app, the last conversation of this project.")
                     if cont else t("Opened in the Claude desktop app."))
+        if done == "terminal_old":
+            return t("Your Claude Code is older than 2.1.285, which can open the desktop app: "
+                     "opened in a terminal. Update it with: claude update")
         return t("Opened in a terminal.")
 
 

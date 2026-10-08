@@ -82,7 +82,7 @@ connection to the window:
 |---|---|
 | `CLAUDE.md` | **your** file: notes about the car. It imports the rules, and the program never overwrites it |
 | `.claude/ms43-rules.md` | the rules: changes only through the draft, evidence first, small steps, never hide an event, people's safety first |
-| `.claude/skills/` | `logging-setup`, `wot-pull`, `log-review`, `ignition`, `fuel-trims`, `change-request` |
+| `.claude/skills/` | `logging-setup`, `wot-pull`, `log-review`, `ignition`, `fuel-trims`, `change-request`, `logger-debug` |
 | `.claude/settings.json` | protects the generated files from edits, UTF-8 for Python, a start-of-session check |
 | `analysis/STATE.md` | the current state of the car, kept short by Claude after each review |
 | `logs/` · `analysis/` | your logs · Claude's scripts, charts and reviews |
@@ -114,8 +114,17 @@ signal comes from, what was removed. You **pick** them, and nobody types ratios 
 <img src="docs/img/en-logs.png" alt="Logs screen: recorder, conditions of the log, knock events" width="100%">
 
 * **Built-in logger.** It reads the ECU through a K+DCAN (FTDI) cable exactly as your ADX
-  describes, and sends nothing else. Check the connection, start, stop. Rpm, coolant and oil are
-  shown live, the link reconnects by itself, and every byte is kept in a raw journal.
+  describes, and sends nothing else. Rpm, coolant and oil are shown live, and every byte is kept
+  in a raw journal.
+  * **Check the connection** is a diagnostic: ECU ident, the data request at 9600, the fast rate,
+    and which mode a recording will use. Replies are read by their DS2 status, so "engine running"
+    (A2) and "firmware lacks the logging patch" (B0) are told apart from a real loss of signal.
+  * **The mode is picked by itself**: the ADX at its fast rate; the same request at 9600 when the
+    engine already runs; or the **standard 0B 03 definition** built into the program when the
+    firmware has no logging patch (stock 0056/0066/0069 work out of the box).
+  * **ADX pack**: one button downloads the MS43 logger definitions and the patchlist from the
+    MS4X Wiki. The program suggests the right one (MS43X001, or the extended log for your engine)
+    and warns at home when the ADX does not fit the firmware.
 * **Or TunerPro as usual.** Its native **`.xdl`** is decoded with your ADX. The decoder was
   verified against TunerPro's own export on 131 channels × 7193 rows, and the raw file is kept
   so a log can be decoded again. A CSV export works too.
@@ -175,7 +184,7 @@ never wipe a good copy. Warnings mean real risks only (damage, bricking, a non-s
 
 ---
 
-## What Claude can ask for: 24 MCP tools
+## What Claude can ask for: 25 MCP tools
 
 <details>
 <summary>The list</summary>
@@ -187,6 +196,7 @@ never wipe a good copy. Warnings mean real risks only (damage, bricking, a non-s
 | Draft | `edit_propose`, `edit_list`, `edit_remove`, `edit_show` (the draft only, never a file) |
 | Logs | `log_list`, `log_info` (conditions, quality, every knock event, fuel trims at limits, implausible values), `log_modes` (idle segments, full-throttle pulls with gear and rpm rate, the limiter, time-weighted knock), `log_rows`, `log_map_hits`, `log_compare`, `log_show` |
 | Car | `car_info`, `car_calibrate` (gears from steady driving), `car_propose` (a value for you to accept) |
+| Logger | `logger_info` (the ADX, whether it fits the firmware, the last connection check, the recorder) |
 
 </details>
 

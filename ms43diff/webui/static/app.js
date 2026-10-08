@@ -129,6 +129,7 @@ function renderSide() {
     fileCard("xdf", T("XDF definition"), T("choose the .xdf file")) +
     fileCard("bin_a", T("Firmware A"), T("choose the first .bin (e.g. stock)")) +
     fileCard("bin_b", T("Firmware B"), T("choose the second .bin (e.g. tune)")) +
+    fileCard("adx", T("Logger definition (ADX)"), T("choose the .adx for logging")) +
     `<details class="other"${other ? " open" : ""}><summary>${esc(T("Other software version (for comparing versions and porting)"))}</summary>` +
     fileCard("xdf2", T("XDF of the other version"), T("choose the .xdf file")) +
     fileCard("bin2", T("Firmware of the other version"), T("choose the .bin")) + `</details>`;
@@ -476,7 +477,7 @@ function projectPanel(a) {
       ${a.claude_cli ? `<button class="btn" id="btnProjOpen"${p.exists ? "" : " disabled"}>${esc(T("Open in Claude Code"))}</button>
         <button class="btn" id="btnProjOpenTerm"${p.exists ? "" : " disabled"} title="${esc(T("Open in a terminal"))}">&gt;_</button>` : ""}</div>
     ${!a.claude_cli && p.exists ? `<div class="muted small">${esc(T("Open the folder in Claude Code: cd into it and run claude."))}</div>` : ""}
-    ${res ? `<div class="note">${esc(T("Written: {n} file(s).", {n: res.written.length}))}${res.kept.length ? " " + esc(T("Kept your changed files: {list}", {list: res.kept.join(", ")})) : ""}</div>` : ""}
+    ${res ? `<div class="note">${esc(T("Written: {n} file(s).", {n: res.written.length}))}${res.kept.length ? " " + esc(T("Kept your changed files: {list}", {list: res.kept.join(", ")})) : ""}${res.written.includes(".mcp.json") ? "<br><b>" + esc(T("The connection to this window changed: restart the Claude Code session (the conversation stays when you continue it) so it picks up the ms43 tools.")) + "</b>" : ""}</div>` : ""}
     </div></section>`;
 }
 const CAR_FIELDS = ["model", "gearbox", "ratios", "final_drive", "tire", "circumference", "speed_sensor", "mods_other", "fuel", "notes"];
@@ -1058,18 +1059,23 @@ function recorderPanel(fwOpts) {
   const live = st && st.live ? st.live : {};
   const v = (k, u) => live[k] === null || live[k] === undefined ? "—" : `${live[k]} ${u}`;
   const states = {starting: T("starting"), connecting: T("connecting…"), recording: T("recording"),
-                  reconnecting: T("connection lost — reconnecting"), no_port: T("the port cannot be opened"), stopped: T("stopped")};
+                  reconnecting: T("no answer — reconnecting"), no_port: T("the port cannot be opened"), stopped: T("stopped"),
+                  refused: T("the ECU refused — recording stopped")};
+  const modes = {fast: T("fast mode"), slow: T("slow mode (9600)"), stock: T("standard ADX (0B 03)"), normal: ""};
   const status = st ? `<div class="lrstat${rec ? " on" : ""}">
-      <div><b>${esc(states[st.state] || st.state)}</b> · ${esc(st.name)} · ${esc(T("{s} s · {rows} rows · {hz} Hz", {s: st.seconds, rows: st.rows, hz: st.rate}))}</div>
+      <div><b>${esc(states[st.state] || st.state)}</b>${st.mode && modes[st.mode] ? " · " + esc(modes[st.mode]) : ""} · ${esc(st.name)} · ${esc(T("{s} s · {rows} rows · {hz} Hz", {s: st.seconds, rows: st.rows, hz: st.rate}))}</div>
       <div class="lrlive"><span>${esc(T("rpm"))} <b>${esc(v("Engine Speed", ""))}</b></span><span>${esc(T("coolant"))} <b>${esc(v("Coolant Temperature", "°C"))}</b></span><span>${esc(T("oil"))} <b>${esc(v("Oil Temperature", "°C"))}</b></span></div>
-      ${st.errors || st.reconnects ? `<div class="muted small">${esc(T("missed replies: {e} · reconnects: {r}", {e: st.errors, r: st.reconnects}))}${st.message ? " · " + esc(st.message) : ""}</div>` : ""}</div>` : "";
-  const test = r.test ? `<details class="lrtest"${r.test.ok ? "" : " open"}><summary>${r.test.ok
+      ${st.state === "refused" ? `<div class="alert">${esc(st.message)}</div>` : st.message ? `<div class="note">${esc(st.message)}</div>` : ""}
+      ${st.errors || st.reconnects ? `<div class="muted small">${esc(T("missed replies: {e} · reconnects: {r}", {e: st.errors, r: st.reconnects}))}</div>` : ""}</div>` : "";
+  const steps = r.test && r.test.steps ? `<div class="lrsteps">${r.test.steps.map(x => `<div class="${x.ok === true ? "ok" : x.ok === false ? "bad" : "warn"}">${x.ok === true ? "✓" : x.ok === false ? "✗" : "•"} ${esc(x.text)}</div>`).join("")}</div>` : "";
+  const test = r.test ? `${steps}${r.test.ok ? "" : `<div class="alert">${esc(r.test.error)}</div>`}<details class="lrtest"><summary>${r.test.ok
       ? "✓ " + esc(T("The ECU answers: rpm {n}, coolant {c} °C, oil {o} °C", {n: r.test.values["Engine Speed"] ?? "—", c: r.test.values["Coolant Temperature"] ?? "—", o: r.test.values["Oil Temperature"] ?? "—"}))
-      : "✗ " + esc(T("No connection: {error}", {error: r.test.error}))}</summary>
+      : "✗ " + esc(T("Exchange journal"))}</summary>
       <div class="muted small">${esc(T("Exchange journal (also saved to logs/{file}):", {file: r.test.journal_file || ""}))}</div>
       <pre class="lgtext">${esc(r.test.journal.map(l => `${String(l.t).padEnd(8)} ${l.dir.padEnd(5)} ${l.baud ? String(l.baud).padEnd(7) : "".padEnd(7)} ${l.hex || ""} ${l.text || ""}`).join("\n"))}</pre></details>` : "";
   return `<section class="panel"><header><b>${esc(T("Record with the cable"))}</b>
-      <span class="muted">${esc(T("The program reads the ECU itself through the K+DCAN cable, as the ADX describes ({adx}). Ignition on; with a high-speed ADX connect before starting the engine. Only you start and stop it — the AI cannot.", {adx: r.adx || T("asked when needed")}))}</span></header>
+      <span class="muted">${esc(T("The program reads the ECU itself through the K+DCAN cable, as the ADX describes. Only you start and stop it — the AI cannot."))}</span></header>
+    ${adxBlock(r.adx_info || {}, rec)}
     <div class="srv-grid"><label>${esc(T("COM port"))}<select id="lrPort"${rec ? " disabled" : ""}>${ports}</select></label>
       <label>${esc(T("Firmware in the car"))}<select id="lgRole2"${rec ? " disabled" : ""}>${fwOpts}</select></label>
       <label>${esc(T("Note (fuel, weather, what you did)"))}<input id="lrNote" value="${esc(S.lrNote || "")}"${rec ? " disabled" : ""}></label></div>
@@ -1077,7 +1083,24 @@ function recorderPanel(fwOpts) {
       : `<button class="btn" id="btnLrTest">${esc(T("Check the connection"))}</button><button class="btn primary" id="btnLrStart">● ${esc(T("Start recording"))}</button>`}
       <button class="btn" id="btnLrPorts"${rec ? " disabled" : ""}>↻</button></div>
     ${status}${test}
+    <div class="muted small">${esc(T("Fast mode: ignition on, engine OFF, connect (Check the connection / Start recording), then start the engine. With the engine already running the program records at 9600, slower."))}</div>
     <div class="muted small">${esc(T("FTDI cable: in Device Manager → the port → Advanced, a latency timer of 1 ms may raise the rate."))}</div></section>`;
+}
+function adxBlock(a, rec) {
+  const chk = a.check || {};
+  const cls = chk.state === "ok" ? "ok" : chk.state === "warn" ? "bad" : "";
+  const opts = `<option value="">${esc(a.name ? a.name : T("— choose —"))}</option>` + (a.pack || []).filter(p => p.name !== a.name).map(p =>
+    `<option value="${esc(p.name)}">${esc(p.name)}${p.request ? " · " + esc(p.request) : ""}${p.name === a.recommended ? " ★" : ""}</option>`).join("");
+  return `<div class="adxblk"><div class="srv-grid">
+      <label>${esc(T("Logger definition (ADX)"))}<select id="lrAdx"${rec ? " disabled" : ""}>${opts}</select></label>
+      <div class="adxinfo">${a.name ? `<b>${esc(a.name)}</b> ${a.request ? `<span class="tag${cls ? " " + cls : ""}">${esc(a.request)}</span>` : ""}
+        ${chk.text ? `<div class="small ${chk.state === "warn" ? "warn" : "muted"}">${esc(chk.text)}</div>` : ""}` : `<span class="muted">${esc(T("No ADX chosen."))}</span>`}</div></div>
+    <div class="toolbar">
+      <button class="btn" id="btnLrPack"${rec ? " disabled" : ""}>⤓ ${esc((a.pack || []).length ? T("Update the ADX pack from ms4x.net") : T("Download the ADX pack from ms4x.net"))}</button>
+      <button class="btn" id="btnLgAdx"${rec ? " disabled" : ""}>${esc(T("Another file…"))}</button>
+      ${a.recommended && a.recommended !== a.name ? `<button class="btn" data-lruse="${esc(a.recommended)}">★ ${esc(T("Use {name}", {name: a.recommended}))}</button>` : ""}</div>
+    <div class="muted small">${esc(a.standard ? T("Standard ADX (0B 03): {name} — used automatically when the extended request is not supported (works on any MS43, also with the engine running).", {name: a.standard})
+      : T("No standard ADX (0B 03) in the pack: without the logging patch the ECU cannot be recorded. Put a 0B 03 ADX into {folder}.", {folder: a.pack_folder || ""}))}</div></div>`;
 }
 let lrTimer = null;
 function lrPoll() {
@@ -1216,7 +1239,14 @@ $("view").addEventListener("click", async e => {
       if (r.status && r.status.rows) { S.lgRange = null; S.lgCell = null; await openLog(r.status.name, false); }
       return renderLogs();
     }
-    if (t.id === "btnLgAdx") { S.lg = await api("logs_pick_adx", {}); return renderLogs(); }
+    if (t.id === "btnLgAdx") { S.lg = await api("logs_pick_adx", {}); S.lr = await api("logger_state", {role: S.lgRole}); return renderLogs(); }
+    if (t.id === "btnLrPack") {
+      const r = await api("logger_pack", {role: S.lgRole}, T("Downloading the ADX pack…"));
+      S.lr = r; if (r.message) toast(esc(r.message).replace(/\n/g, "<br>"));
+      return renderLogs();
+    }
+    const use = t.closest("[data-lruse]");
+    if (use) { S.lr = await api("logger_use_adx", {name: use.dataset.lruse, role: S.lgRole}); return renderLogs(); }
     const zoom = t.closest("[data-lgzoom]");
     if (zoom) { const [a, b] = zoom.dataset.lgzoom.split(",").map(Number); S.lgRange = [Math.max(S.lgV.t0, a), Math.min(S.lgV.t1, b)]; return lgRefresh("series"); }
     if (t.id === "btnLgAll") { S.lgRange = null; return lgRefresh("series"); }
@@ -1240,6 +1270,8 @@ $("view").addEventListener("change", e => {
   const id = e.target.id;
   if (id === "lgRole" || id === "lgRole2") S.lgRole = e.target.value;
   if (id === "lrPort") S.lrPort = e.target.value;
+  if (id === "lrAdx" && e.target.value) api("logger_use_adx", {name: e.target.value, role: S.lgRole}).then(r => { S.lr = r; renderLogs(); }, fail);
+  if (id === "lgRole2") api("logger_state", {role: e.target.value}).then(r => { S.lr = r; renderLogs(); }, fail);
   if (id === "lgAddCh" && e.target.value) { S.lgChart.push(e.target.value); lgRefresh("series"); }
   if (id === "lgMapSel") { S.lgMap = Object.assign({}, S.lgMap || {}, {map: e.target.value, y_channel: "", x_channel: ""}); S.lgCell = null; lgRefresh("map"); }
   if (id === "lgVal") {

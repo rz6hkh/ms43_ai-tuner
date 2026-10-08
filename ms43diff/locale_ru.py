@@ -2841,4 +2841,140 @@ RU: Dict[str, str] = {
         'Другие изменения',
     'the owner said: stock E46, the speed comes from the ABS (front wheels)':
         'владелец сказал: E46 в стоке, скорость берётся с ABS (передние колёса)',
+    'The ECU refused the switch to the fast baud rate ({hex}, status A2). The link itself works. The ECU accepts the switch only while the engine is not running: ignition on, engine off, connect, then start the engine.':
+        'ЭБУ отказался переходить на высокую скорость ({hex}, статус A2). Сама связь работает. Переход ЭБУ принимает только при незаведённом моторе: зажигание включено, мотор заглушен, подключитесь, потом заводите.',
+    'The ECU does not know this request ({hex}, status FF): the ADX does not match the firmware (e.g. an extended-logging ADX without the patch in the firmware).':
+        'ЭБУ не знает этот запрос ({hex}, статус FF): ADX не подходит к прошивке (например, ADX расширенного логирования без патча в прошивке).',
+    'The ECU refused {name} ({hex}, status {status:02X}).':
+        'ЭБУ отклонил {name} ({hex}, статус {status:02X}).',
+    'Your Claude Code is older than 2.1.285, which can open the desktop app: opened in a terminal. Update it with: claude update':
+        'Ваш Claude Code старше 2.1.285 и не умеет открывать приложение: открыто в терминале. Обновите: claude update',
+    'The connection to this window changed: restart the Claude Code session (the conversation stays when you continue it) so it picks up the ms43 tools.':
+        'Подключение к окну изменилось: перезапустите сессию Claude Code (разговор сохранится, если продолжить его), чтобы она подхватила инструменты ms43.',
+    'Recording at the base rate: the ECU refused the fast rate (engine running). For the full rate connect with the engine off next time.':
+        'Запись на базовой скорости: ЭБУ отказал в быстрой (мотор работает). Для полной частоты в следующий раз подключайтесь при заглушенном моторе.',
+    'Recording with the standard logging ADX: the firmware does not support the extended request.':
+        'Запись стоковым ADX: прошивка не поддерживает расширенный запрос.',
+    'The ECU is busy ({hex}).':
+        'ЭБУ занят ({hex}).',
+    "The firmware does not support the ADX's request {req} ({hex}, status {status:02X}). The link works. An extended-logging ADX (0B B0) needs the DS2 Logging Feature Enhancement patch or the MS43X custom firmware; without it use the standard logging ADX (0B 03).":
+        'Прошивка не поддерживает запрос ADX {req} ({hex}, статус {status:02X}). Связь работает. Расширенному ADX (0B B0) нужен патч DS2 Logging Feature Enhancement или кастомная прошивка MS43X; без него используйте стоковый ADX (0B 03).',
+    'The ECU answers (ident): {text}':
+        'ЭБУ отвечает (ident): {text}',
+    'The data request {req} works at {baud} baud.':
+        'Запрос данных {req} работает на {baud} бод.',
+    'The fast rate was refused (engine running?): a recording will use {baud} baud, slower. For the fast rate: ignition on, engine off, connect, then start the engine.':
+        'Быстрая скорость отклонена (мотор работает?): запись пойдёт на {baud} бод, медленнее. Для быстрой: зажигание вкл., мотор заглушен, подключиться, потом заводить.',
+    'No answer at all: check the cable power (12 V), the K-line pins, the port and the ignition.':
+        'Ответа нет совсем: проверьте питание кабеля (12 В), пины K-линии, порт и зажигание.',
+    'At {baud} baud: {error}':
+        'На {baud} бод: {error}',
+    'A recording will use the standard logging ADX {name}: fewer channels, works on any MS43.':
+        'Запись пойдёт стоковым ADX {name}: каналов меньше, работает на любой MS43.',
+    'A recording will use {name} as it is.':
+        'Запись пойдёт с {name} как есть.',
+    'not an ADX/XDF file (the site answered something else)':
+        'не файл ADX/XDF (сайт ответил чем-то другим)',
+    'Extended request 0B B0 needs the DS2 Logging Feature Enhancement patch or MS43X; {why} "Check the connection" in the car tells for sure.':
+        'Расширенному запросу 0B B0 нужен патч DS2 Logging Feature Enhancement или MS43X; {why} Точно скажет «Проверить связь» в машине.',
+    'Standard data request {req}: works on any MS43.':
+        'Стоковый запрос данных {req}: работает на любой MS43.',
+    'Extended request 0B B0: choose the firmware that is in the car to check that it supports it.':
+        'Расширенный запрос 0B B0: выберите прошивку, которая стоит в машине, чтобы проверить поддержку.',
+    'Extended request 0B B0: the MS43X custom firmware {fw} supports it.':
+        'Расширенный запрос 0B B0: кастомная прошивка MS43X {fw} его поддерживает.',
+    'Extended request 0B B0: the DS2 Logging Feature Enhancement patch is in {name}.':
+        'Расширенный запрос 0B B0: патч DS2 Logging Feature Enhancement есть в {name}.',
+    'Extended request 0B B0, but {name} ({fw}) has no DS2 Logging Feature Enhancement patch: the ECU will answer B0 and the logger will use the standard ADX (0B 03), fewer channels.':
+        'Расширенный запрос 0B B0, но в {name} ({fw}) нет патча DS2 Logging Feature Enhancement: ЭБУ ответит B0, и логгер перейдёт на стоковый ADX (0B 03), каналов меньше.',
+    'a 64 KB calibration file cannot show a code patch.':
+        'по 64 КБ калибровке патч кода не виден.',
+    'choose the patchlist XDF to check the firmware.':
+        'выберите XDF патч-листа, чтобы проверить прошивку.',
+    'the patchlist has no such patch.':
+        'в патч-листе нет такого патча.',
+    'Downloaded: {n} file(s) into {folder}':
+        'Скачано файлов: {n} в {folder}',
+    'Failed: {list}':
+        'Не удалось: {list}',
+    'No such file in the ADX pack: {name}':
+        'В наборе ADX нет файла {name}',
+    'Could not read the list of files on ms4x.net: {error}':
+        'Не удалось прочитать список файлов на ms4x.net: {error}',
+    '{n} channels · {kind}':
+        'каналов {n} · {kind}',
+    'Choose the logger definition (ADX)':
+        'Выберите описание логов (ADX)',
+    'extended, fast rate':
+        'расширенный, быстрая скорость',
+    'extended':
+        'расширенный',
+    'standard':
+        'стоковый',
+    'Another file…':
+        'Другой файл…',
+    'Download the ADX pack from ms4x.net':
+        'Скачать набор ADX с ms4x.net',
+    'Downloading the ADX pack…':
+        'Скачиваю набор ADX…',
+    'Exchange journal':
+        'Журнал обмена',
+    'Fast mode: ignition on, engine OFF, connect (Check the connection / Start recording), then start the engine. With the engine already running the program records at 9600, slower.':
+        'Быстрый режим: зажигание вкл., мотор ЗАГЛУШЕН, подключиться («Проверить связь» / «Начать запись»), потом заводить. Если мотор уже работает, программа пишет на 9600, медленнее.',
+    'Logger definition (ADX)':
+        'Описание логов (ADX)',
+    'No ADX chosen.':
+        'ADX не выбран.',
+    'No standard ADX (0B 03) in the pack: without the logging patch the ECU cannot be recorded. Put a 0B 03 ADX into {folder}.':
+        'Стокового ADX (0B 03) в наборе нет: без патча логирования ЭБУ не записать. Положите ADX с 0B 03 в {folder}.',
+    'Standard ADX (0B 03) in the pack: {name} — used automatically when the extended request is not supported.':
+        'Стоковый ADX (0B 03) в наборе: {name} — используется автоматически, если расширенный запрос не поддерживается.',
+    'The program reads the ECU itself through the K+DCAN cable, as the ADX describes. Only you start and stop it — the AI cannot.':
+        'Программа сама читает ЭБУ через кабель K+DCAN, как описано в ADX. Запускаете и останавливаете запись только вы — нейросеть не может.',
+    'Update the ADX pack from ms4x.net':
+        'Обновить набор ADX с ms4x.net',
+    'Use {name}':
+        'Выбрать {name}',
+    'choose the .adx for logging':
+        'выберите .adx для логов',
+    'fast mode':
+        'быстрый режим',
+    'no answer — reconnecting':
+        'нет ответа — переподключаюсь',
+    'slow mode (9600)':
+        'медленный режим (9600)',
+    'standard ADX (0B 03)':
+        'стоковый ADX (0B 03)',
+    'the ECU refused — recording stopped':
+        'ЭБУ отказал — запись остановлена',
+    '— choose —':
+        '— выбрать —',
+    'Logger definition (ADX): {name}':
+        'Описание логов (ADX): {name}',
+    'Firmware in the window ({role}): {fw}; engine: {engine}':
+        'Прошивка в окне ({role}): {fw}; мотор: {engine}',
+    'ADX pack ({folder}): {list}':
+        'Набор ADX ({folder}): {list}',
+    'Suggested: {name}; standard (0B 03) fallback: {std}':
+        'Рекомендуется: {name}; стоковый (0B 03) запасной: {std}',
+    'Last "Check the connection": {result}':
+        'Последняя «Проверка связи»: {result}',
+    'Recorder: {state}, mode {mode}, {rows} rows, {rate} Hz, missed {errors}, reconnects {rec}':
+        'Запись: {state}, режим {mode}, строк {rows}, {rate} Гц, пропусков {errors}, переподключений {rec}',
+    'data request {req}, {n} channels, base rate {baud}, fast rate: {fast}':
+        'запрос данных {req}, каналов {n}, базовая скорость {baud}, быстрая скорость: {fast}',
+    'fits the firmware: {state} — {text}':
+        'подходит к прошивке: {state} — {text}',
+    'none':
+        'нет',
+    'journal: logs/{file}':
+        'журнал: logs/{file}',
+    'works, mode {mode}':
+        'работает, режим {mode}',
+    'failed: {error}':
+        'ошибка: {error}',
+    'Choose the ADX the recording was made with.':
+        'Выберите ADX, с которым сделана запись.',
+    'Standard ADX (0B 03): {name} — used automatically when the extended request is not supported (works on any MS43, also with the engine running).':
+        'Стоковый ADX (0B 03): {name} — используется автоматически, если расширенный запрос не поддерживается (работает на любой MS43, и на заведённом моторе).',
 }

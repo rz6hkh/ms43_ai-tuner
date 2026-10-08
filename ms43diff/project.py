@@ -30,7 +30,7 @@ import re
 import shutil
 import subprocess
 import sys
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from . import i18n
 from .i18n import t
@@ -254,10 +254,25 @@ def has_history(folder: str) -> bool:
         return False
 
 
+DESKTOP_MIN = (2, 1, 285)          # `claude --desktop` appeared in this version
+
+
+def claude_version(claude: str) -> Optional[Tuple[int, ...]]:
+    """The installed Claude Code version, e.g. (2, 1, 284); None when unknown."""
+    try:
+        res = subprocess.run([claude, "--version"], capture_output=True, text=True, timeout=30,
+                             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    m = re.search(r"(\d+)\.(\d+)\.(\d+)", res.stdout or "")
+    return tuple(int(x) for x in m.groups()) if m else None
+
+
 def open_in_claude_code(folder: str, where: str = "desktop") -> str:
     """Open the project in Claude Code: the Code tab of the desktop app ("desktop", needs
     Claude Code 2.1.285+) or a terminal ("terminal"). The last conversation in the folder
-    is continued when there is one. Returns what was done: "desktop" or "terminal"."""
+    is continued when there is one. An older Claude Code opens a terminal instead.
+    Returns what was done: "desktop", "terminal" or "terminal_old" (desktop asked, too old)."""
     claude = shutil.which("claude")
     if not claude:
         raise FileNotFoundError(t("The claude command was not found. Install Claude Code, then "
@@ -265,11 +280,18 @@ def open_in_claude_code(folder: str, where: str = "desktop") -> str:
     extra = ["--continue"] if has_history(folder) else []
     no_window = getattr(subprocess, "CREATE_NO_WINDOW", 0)
     if where == "desktop":
+        version = claude_version(claude)
+        if version is not None and version < DESKTOP_MIN:
+            _open_terminal(claude, folder, extra)
+            return "terminal_old"
         try:
             res = subprocess.run([claude, "--desktop", *extra], cwd=folder, capture_output=True,
                                  text=True, timeout=60, creationflags=no_window)
         except (OSError, subprocess.TimeoutExpired) as exc:
             raise FileNotFoundError(str(exc)) from exc
+        if res.returncode != 0 and "unknown option" in (res.stderr + res.stdout).lower():
+            _open_terminal(claude, folder, extra)
+            return "terminal_old"
         if res.returncode != 0:
             detail = (res.stderr or res.stdout or "").strip().splitlines()
             raise FileNotFoundError(
@@ -277,12 +299,16 @@ def open_in_claude_code(folder: str, where: str = "desktop") -> str:
                   "needs 2.1.285 or newer and the Claude desktop app) or open it in a terminal.",
                   error=detail[-1][:200] if detail else res.returncode))
         return "desktop"
+    _open_terminal(claude, folder, extra)
+    return "terminal"
+
+
+def _open_terminal(claude: str, folder: str, extra: List[str]) -> None:
     if os.name == "nt":
         subprocess.Popen(["cmd", "/c", "start", "", "cmd", "/k", "claude", *extra], cwd=folder,
-                         creationflags=no_window)
+                         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     else:  # pragma: no cover - development only
         subprocess.Popen([claude, *extra], cwd=folder)
-    return "terminal"
 
 
 def default_values(name: str, firmware: str, xdf: str, bin_a: str, bin_b: str,

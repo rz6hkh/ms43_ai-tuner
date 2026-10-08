@@ -277,3 +277,9 @@ table.lgmap td.c-none{opacity:.45}
 /* car profile */
 .carprop{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;margin-top:6px}
 .chk{display:inline-flex;gap:6px;align-items:center;font-size:13px;margin-right:12px}
+
+/* logger: ADX block and diagnostic steps */
+.adxblk{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:8px 0;display:flex;flex-direction:column;gap:6px}
+.adxinfo{display:flex;flex-direction:column;gap:2px;justify-content:center}
+.lrsteps{display:flex;flex-direction:column;gap:3px;margin:8px 0;font-size:13px}
+.lrsteps .ok{color:var(--ok)} .lrsteps .bad{color:var(--pos)} .lrsteps .warn{color:var(--warn)}

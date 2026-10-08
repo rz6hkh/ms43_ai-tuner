@@ -71,6 +71,8 @@ COMMON = [
     "--hidden-import", "ms43diff.adx",
     "--hidden-import", "ms43diff.ds2logger",
     "--hidden-import", "ms43diff.car",
+    "--hidden-import", "ms43diff.adxpack",
+    "--hidden-import", "ms43diff.logcheck",
     "--hidden-import", "serial",
     "--hidden-import", "serial.tools.list_ports",
     "--hidden-import", "ms43diff.project",
@@ -80,6 +82,8 @@ COMMON = [
     # the tuning project templates (CLAUDE.md, skills, the log loader)
     "--add-data", os.path.join(ROOT, "ms43diff", "projectkit") + os.pathsep
     + "ms43diff/projectkit",
+    "--add-data", os.path.join(ROOT, "ms43diff", "adxdata") + os.pathsep
+    + "ms43diff/adxdata",
     "--paths", ROOT,
     # keep the build lean.
     # PIL is NOT excluded: excluding it conflicts with --collect-all reportlab
@@ -119,7 +123,7 @@ def build(entry: str, name: str, windowed: bool, extra=None) -> str:
 
 
 PY_VERSION = "3.12.10"
-PY_PACKAGES = ["pandas", "numpy", "matplotlib"]
+PY_PACKAGES = ["pandas", "numpy", "matplotlib", "pyserial"]
 
 
 def bundle_python() -> str:

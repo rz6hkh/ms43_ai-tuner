@@ -491,7 +491,7 @@ def logs_state(state, body: Dict) -> Dict[str, Any]:
     return {"project": bool(folder), "folder": folder,
             "logs": [_log_entry(p) for p in tplog.list_logs(folder)],
             "firmwares": firmwares, "view": view, "filters": list(tplog.FILTERS),
-            "adx": os.path.basename(state.settings.get("log_adx", "") or "")}
+            "adx": os.path.basename(state.paths.get("adx", "") or "")}
 
 
 def _firmware_for(state, role: str):
@@ -512,14 +512,11 @@ def _firmware_for(state, role: str):
 
 
 def _pick_adx(state) -> str:
-    from .. import i18n
-
     path = DIALOGS.open_file(t("The ADX the .xdl logs are recorded with"),
                              [(t("TunerPro logger definition"), "*.adx"), (t("All files"), "*.*")],
-                             state.settings.get("log_adx", ""))
+                             state.paths.get("adx", ""))
     if path:
-        state.settings["log_adx"] = path
-        i18n.save_settings(log_adx=path)
+        state.set_path("adx", os.path.normpath(path))
     return path
 
 
@@ -557,13 +554,15 @@ def logs_add(state, body: Dict) -> Dict[str, Any]:
     if firmware is None:
         return {**logs_state(state, {}), "cancelled": True}
     bin_path, xdf_path = firmware
-    src = DIALOGS.open_file(t("TunerPro log"), [(t("TunerPro log"), "*.csv *.xdl"),
+    src = DIALOGS.open_file(t("TunerPro log"), [(t("TunerPro log"), "*.csv *.xdl *.jsonl"),
                                                  (t("All files"), "*.*")])
     if not src:
         return {**logs_state(state, {}), "cancelled": True}
     adx_path = ""
+    if src.lower().endswith(".jsonl"):
+        adx_path = state.paths.get("adx", "")      # the standard 0B 03 ADX is tried as well
     if src.lower().endswith(".xdl"):
-        adx_path = state.settings.get("log_adx", "")
+        adx_path = state.paths.get("adx", "")
         if not adx_path or not os.path.isfile(adx_path):
             adx_path = _pick_adx(state)
             if not adx_path:
@@ -832,9 +831,16 @@ def logs_file(state, body: Dict) -> Dict[str, Any]:
 # The logger (the cable)
 # ---------------------------------------------------------------------------
 
-def _logger_adx(state) -> str:
-    path = state.settings.get("log_adx", "")
+def _logger_adx(state, role: str = "bin_a") -> str:
+    """The chosen ADX; none chosen: the suggested one of the pack, else the built-in standard."""
+    from .. import adxpack
+
+    path = state.paths.get("adx", "")
     if not path or not os.path.isfile(path):
+        view = _adx_view(state, role)
+        suggested = os.path.join(adxpack.folder(), view["recommended"]) if view["recommended"] else ""
+        path = suggested if suggested and os.path.isfile(suggested) else adxpack.standard_adx()
+    if not path:
         path = _pick_adx(state)
     if not path:
         raise ModeError(t("Choose the ADX the logger reads the ECU with."))
@@ -858,14 +864,84 @@ def _transport(port: str):
     return lambda adx: SerialTransport(port, adx.parity)
 
 
+def _adx_view(state, role: str) -> Dict[str, Any]:
+    """The chosen ADX, whether the firmware in the car supports it, the pack and a suggestion."""
+    from .. import adxpack, car as carmod, logcheck
+
+    path = state.paths.get("adx", "")
+    out: Dict[str, Any] = {"name": os.path.basename(path), "path": path}
+    bin_path = state.paths.get(role if role in ("bin_a", "bin_b", "bin2") else "bin_a", "")
+    xdf = None
+    firmware = ""
+    try:
+        if bin_path:
+            from ..binfile import BinFile, Reader
+
+            xdf_path = state.paths.get("xdf2" if role == "bin2" else "xdf", "")
+            if xdf_path:
+                xdf = state.xdf(xdf_path)
+                firmware = Reader(xdf, BinFile(bin_path)).firmware_id() or ""
+    except Exception:  # noqa: BLE001 - the check just knows less
+        xdf = None
+    if path and os.path.isfile(path):
+        try:
+            out.update(logcheck.adx_summary(path))
+            patchlist = state.xdf(state.paths["patchlist"]) if state.paths.get("patchlist") else None
+            out["check"] = logcheck.check(path, bin_path, xdf, patchlist)
+        except Exception as exc:  # noqa: BLE001 - shown next to the ADX
+            out["error"] = str(exc)
+    project = os.path.dirname(_logs_dir(state)) if state.settings.get("project_dir") else ""
+    model = carmod.load(project)["model"] if project and os.path.isdir(project) else ""
+    engine = adxpack.engine_of(model, os.path.basename(bin_path), os.path.basename(path))
+    out["engine"] = engine
+    out["firmware"] = firmware
+    out["pack"] = [{"name": f["name"], "request": f.get("request", ""), "extended": f.get("extended"),
+                    "channels": f.get("channels"), "error": f.get("error", "")}
+                   for f in adxpack.files() if f["type"] == "adx"]
+    out["recommended"] = os.path.basename(adxpack.recommend(firmware, engine))
+    out["standard"] = os.path.basename(adxpack.standard_adx())
+    out["pack_folder"] = adxpack.folder()
+    return out
+
+
 def logger_state(state, body: Dict) -> Dict[str, Any]:
     from ..ds2logger import list_ports
 
     rec = getattr(state, "recorder", None)
+    role = str(body.get("role") or state.settings.get("logger_role") or "bin_a")
     return {"ports": list_ports(), "port": state.settings.get("logger_port", ""),
-            "adx": os.path.basename(state.settings.get("log_adx", "") or ""),
+            "adx": os.path.basename(state.paths.get("adx", "") or ""),
+            "adx_info": _adx_view(state, role),
             "status": dict(rec.status) if rec else None, "recording": bool(rec and rec.running),
             "test": getattr(state, "logger_test", None)}
+
+
+def logger_pack(state, body: Dict) -> Dict[str, Any]:
+    """Download the ADX pack from the MS4X Wiki (never bundled with the program)."""
+    from .. import adxpack
+
+    try:
+        res = adxpack.download(timeout=20)
+    except (OSError, ValueError) as exc:
+        raise ModeError(t("Could not read the list of files on ms4x.net: {error}", error=exc)) from exc
+    out = logger_state(state, body)
+    lines = [t("Downloaded: {n} file(s) into {folder}", n=len(res["files"]), folder=res["folder"])]
+    if res["errors"]:
+        lines.append(t("Failed: {list}", list="; ".join(f"{n}: {e[:60]}" for n, e in res["errors"][:5])))
+    out["message"] = "\n".join(lines)
+    return out
+
+
+def logger_use_adx(state, body: Dict) -> Dict[str, Any]:
+    """Choose an ADX of the pack (by file name, only inside the pack folder)."""
+    from .. import adxpack
+
+    name = os.path.basename(str(body.get("name") or ""))
+    path = os.path.join(adxpack.folder(), name)
+    if not name or not os.path.isfile(path):
+        raise ModeError(t("No such file in the ADX pack: {name}", name=name))
+    state.set_path("adx", path)
+    return logger_state(state, body)
 
 
 def logger_test(state, body: Dict) -> Dict[str, Any]:
@@ -876,12 +952,14 @@ def logger_test(state, body: Dict) -> Dict[str, Any]:
     if getattr(state, "recorder", None) and state.recorder.running:
         raise ModeError(t("Stop the recording first."))
     folder = _logs_dir(state)
-    adx_path = _logger_adx(state)
+    adx_path = _logger_adx(state, str(body.get("role") or "bin_a"))
     port = _logger_port(state, body)
     raw = os.path.join(folder, "raw")
     os.makedirs(raw, exist_ok=True)
     journal = os.path.join(raw, _dt.datetime.now().strftime("test_%Y-%m-%d_%H-%M-%S.jsonl"))
-    result = test_connection(adx_path, _transport(port), journal)
+    from .. import adxpack
+
+    result = test_connection(adx_path, _transport(port), journal, adxpack.standard_adx())
     result["journal_file"] = os.path.relpath(journal, folder)
     state.logger_test = result
     return logger_state(state, {})
@@ -901,18 +979,20 @@ def logger_start(state, body: Dict) -> Dict[str, Any]:
     bin_path, xdf_path = firmware
     if not (os.path.isfile(bin_path) and os.path.isfile(xdf_path)):
         raise ModeError(t("Choose the firmware that was in the car."))
-    adx_path = _logger_adx(state)
+    adx_path = _logger_adx(state, str(body.get("role") or "bin_a"))
     port = _logger_port(state, body)
     note = str(body.get("note") or "")[:500]
 
+    from .. import adxpack
+
     def done(csv_path: str) -> None:
         tplog.bind(csv_path, bin_path, xdf_path, note,
-                   {"adx": os.path.abspath(adx_path), "recorded_with": "MS43 AI-Tuner logger",
-                    "decoder": DECODER_VERSION,
+                   {"adx": os.path.abspath(rec.adx_path), "recorded_with": "MS43 AI-Tuner logger",
+                    "decoder": DECODER_VERSION, "logger_mode": rec.mode,
                     "raw": os.path.relpath(rec.raw_path, folder)})
         state.notify()
 
-    rec = Recorder(adx_path, _transport(port), folder, done)
+    rec = Recorder(adx_path, _transport(port), folder, done, adxpack.standard_adx())
     state.recorder = rec
     state.logger_test = None
     rec.start()

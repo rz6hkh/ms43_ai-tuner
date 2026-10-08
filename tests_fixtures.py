@@ -323,6 +323,18 @@ ADX = """<ADXFORMAT version="1.01">
 """
 
 
+# The standard logging definition: 0B 03 at 9600, no baud switch (the same channels here).
+STOCK_ADX = (ADX.replace("<connectcmd>FAST</connectcmd>", "<connectcmd></connectcmd>")
+             .replace("<disconnectcmd>SLOW</disconnectcmd>", "<disconnectcmd></disconnectcmd>")
+             .replace("<desc>synthetic logger definition</desc>", "<desc>synthetic standard logging</desc>")
+             .replace("""    <baud>125000</baud>
+    <bytestring size="0x5">12050BB0AC</bytestring>""", """    <bytestring size="0x5">12050B031F</bytestring>""")
+             .replace("""    <baud>125000</baud>
+    <listentimeout>200</listentimeout>
+    <packetsize>6</packetsize>""", """    <listentimeout>200</listentimeout>
+    <packetsize>6</packetsize>"""))
+
+
 class FakeEcu:
     """A K+DCAN cable with an MS43 behind it, for the logger tests.
 
@@ -341,6 +353,8 @@ class FakeEcu:
         self.lock = _th.Lock()
         self.requests = 0
         self.drop = 0
+        self.engine_running = False
+        self.patched = True        # knows the extended request 0B B0
         self.sent: list = []
 
     def set_baud(self, baud):
@@ -361,12 +375,19 @@ class FakeEcu:
             if self.baud != self.ecu_baud:
                 return                                    # the ECU hears noise
             if data == bytes.fromhex("12089101E848002A"):
+                if self.engine_running:                   # the ECU refuses the fast rate
+                    self.out += self._reply(b"\xA2")
+                    return
                 self.out += self._reply(b"\xA0")
                 self.ecu_baud = 125000
             elif data == bytes.fromhex("120891002580002E"):
                 self.out += self._reply(b"\xA0")
                 self.ecu_baud = 9600
-            elif data == bytes.fromhex("12050BB0AC"):
+            elif data == bytes.fromhex("12040016"):
+                self.out += self._reply(b"\xA0" + b"7545150 19 00156\x00")
+            elif data == bytes.fromhex("12050BB0AC") and not self.patched:
+                self.out += self._reply(b"\xB0")
+            elif data in (bytes.fromhex("12050BB0AC"), bytes.fromhex("12050B031F")):
                 self.requests += 1
                 if self.drop > 0:
                     self.drop -= 1
