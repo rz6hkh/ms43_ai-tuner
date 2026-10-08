@@ -24,3 +24,5 @@ __pycache__/
 *.bin
 *.xdf
 *.adx
+# ... except the program's own standard logger definition
+!ms43diff/adxdata/*.adx

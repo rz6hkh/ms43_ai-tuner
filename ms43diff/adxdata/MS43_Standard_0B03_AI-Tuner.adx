@@ -1,0 +1,75 @@
+<ADXFORMAT version="1.01">
+  <ADXHEADER>
+    <desc>MS43 standard DS2 status 0B 03 (stock firmware, any version, engine running or not). Layout inferred by MS43 AI-Tuner from recordings, not an official definition: channels marked (?) are hypotheses.</desc>
+    <baud>9600</baud>
+    <parity>2</parity>
+    <connectcmd></connectcmd>
+    <monitorcmd>MONITOR</monitorcmd>
+    <disconnectcmd></disconnectcmd>
+    <DEFAULTS datasizeinbits="8" sigdigits="2" outputtype="3" baud="0" signed="0" lsbfirst="0" float="0" />
+  </ADXHEADER>
+  <ADXVALUE id="N" idhash="0x00030001" title="Engine Speed">
+    <parentcmdidhash>0x00030B03</parentcmdidhash>
+    <units>Engine Speed (rpm)</units>
+    <packetoffset>0x00</packetoffset>
+    <sizeinbits>16</sizeinbits>
+    <MATH equation="X"><VAR varID="X" type="native" /></MATH>
+  </ADXVALUE>
+  <ADXVALUE id="VS" idhash="0x00030002" title="Vehicle Speed">
+    <parentcmdidhash>0x00030B03</parentcmdidhash>
+    <units>Vehicle Speed (km/h)</units>
+    <packetoffset>0x02</packetoffset>
+    <MATH equation="X"><VAR varID="X" type="native" /></MATH>
+  </ADXVALUE>
+  <ADXVALUE id="TCO" idhash="0x00030003" title="Coolant Temperature">
+    <parentcmdidhash>0x00030B03</parentcmdidhash>
+    <units>Coolant Temperature (&#176;C)</units>
+    <packetoffset>0x0A</packetoffset>
+    <MATH equation="0.75*X-48.0"><VAR varID="X" type="native" /></MATH>
+  </ADXVALUE>
+  <ADXVALUE id="LI1" idhash="0x00030004" title="Lambda Integrator Bank 1">
+    <parentcmdidhash>0x00030B03</parentcmdidhash>
+    <units>Lambda Integrator Bank 1 (%)</units>
+    <packetoffset>0x17</packetoffset>
+    <sizeinbits>16</sizeinbits>
+    <MATH equation="X/327.68-100"><VAR varID="X" type="native" /></MATH>
+  </ADXVALUE>
+  <ADXVALUE id="LI2" idhash="0x00030005" title="Lambda Integrator Bank 2">
+    <parentcmdidhash>0x00030B03</parentcmdidhash>
+    <units>Lambda Integrator Bank 2 (%)</units>
+    <packetoffset>0x19</packetoffset>
+    <sizeinbits>16</sizeinbits>
+    <MATH equation="X/327.68-100"><VAR varID="X" type="native" /></MATH>
+  </ADXVALUE>
+  <ADXVALUE id="T14" idhash="0x00030006" title="Temperature byte 14 (?)">
+    <parentcmdidhash>0x00030B03</parentcmdidhash>
+    <units>Temperature byte 14 (?) (&#176;C)</units>
+    <packetoffset>0x0B</packetoffset>
+    <MATH equation="0.75*X-48.0"><VAR varID="X" type="native" /></MATH>
+  </ADXVALUE>
+  <ADXVALUE id="T15" idhash="0x00030007" title="Temperature byte 15 (?)">
+    <parentcmdidhash>0x00030B03</parentcmdidhash>
+    <units>Temperature byte 15 (?) (&#176;C)</units>
+    <packetoffset>0x0C</packetoffset>
+    <MATH equation="0.75*X-48.0"><VAR varID="X" type="native" /></MATH>
+  </ADXVALUE>
+  <ADXVALUE id="UB" idhash="0x00030008" title="Battery Voltage">
+    <!-- data byte 22, 0.1 V: from the sorek.uk DS2 library example (ECU 7545150 and others) -->
+    <parentcmdidhash>0x00030B03</parentcmdidhash>
+    <units>Battery Voltage (V)</units>
+    <packetoffset>0x16</packetoffset>
+    <MATH equation="X*0.1"><VAR varID="X" type="native" /></MATH>
+  </ADXVALUE>
+  <ADXCLISTENPACKET id="DATAREPLY" idhash="0x00030B03" title="Status 0B 03 reply">
+    <listentimeout>600</listentimeout>
+    <packetsize>41</packetsize>
+    <headerstring size="3">122DA0</headerstring>
+  </ADXCLISTENPACKET>
+  <ADXMACRO id="MONITOR" idhash="0x00030101" title="Monitor">
+    <NODE commandID="DATAREQUEST" repeatcount="1" />
+    <NODE commandID="DATAREPLY" repeatcount="1" />
+  </ADXMACRO>
+  <ADXCSENDCOMMAND id="DATAREQUEST" idhash="0x00030102" title="Status 0B 03">
+    <bytestring size="0x5">12050B031F</bytestring>
+  </ADXCSENDCOMMAND>
+</ADXFORMAT>
