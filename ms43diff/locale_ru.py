@@ -1285,8 +1285,6 @@ RU: Dict[str, str] = {
         'Отказ',
     'Cannot write over the source firmware.':
         'Нельзя писать поверх исходной прошивки.',
-    'MS4X Wiki, snapshot of {date} · pages {pages} · parameters linked {params} · source {source}':
-        'MS4X Wiki, снимок от {date} · страниц {pages} · параметров связано {params} · источник {source}',
     'Updating the reference':
         'Обновление справочника',
     'The program will download pages from ms4x.net into the local copy.\nIt needs access to the site.\n\nContinue?':
@@ -1571,6 +1569,10 @@ RU: Dict[str, str] = {
         'выбрать сток .bin',
     'choose the tuned .bin':
         'выбрать тюнинг .bin',
+    'bad shift {n} in formula {src!r}':
+        'неверный сдвиг {n} в формуле {src!r}',
+    'bitwise operator on a fraction in formula {src!r}':
+        'побитовая операция над дробным числом в формуле {src!r}',
     'choose the first .bin (e.g. stock)':
         'выбрать первый .bin (например, сток)',
     'choose the second .bin (e.g. tune)':
@@ -1807,4 +1809,1036 @@ RU: Dict[str, str] = {
         'точек отброшено',
     'wideband lambda':
         'лямбда ШЛЗ',
+    # firmware edits
+    '{value} is not a breakpoint of the {axis} axis of {name}. Breakpoints: {list}':
+        '{value} — не опорная точка оси «{axis}» у {name}. Опорные точки: {list}',
+    'MS43 AI-Tuner — firmware changes':
+        'MS43 AI-Tuner — изменения прошивки',
+    'Created     : {when}':
+        'Создано      : {when}',
+    'Source      : {name}  sha256 {sha}':
+        'Исходник     : {name}  sha256 {sha}',
+    'New file    : {name}  sha256 {sha}':
+        'Новый файл   : {name}  sha256 {sha}',
+    'XDF         : {title} v{ver}':
+        'XDF          : {title} v{ver}',
+    'Bytes changed: {n}':
+        'Изменено байт: {n}',
+    'Checksums: recalculated by MS4X Flasher when flashing.':
+        'Контрольные суммы: пересчитывает MS4X Flasher при прошивке.',
+    'The conversion formula of {name} is broken ({error}); writing through it is refused.':
+        'Формула пересчёта у {name} неисправна ({error}); запись через неё запрещена.',
+    '{value} does not fit {name}: the field holds {low}…{high}.':
+        '{value} не помещается в {name}: поле вмещает {low}…{high}.',
+    'more ignition advance':
+        'больше угол опережения зажигания',
+    'changes knock control':
+        'меняет управление детонацией',
+    'raises a speed or rev limit':
+        'поднимает ограничение скорости или оборотов',
+    'changes the full-load mixture':
+        'меняет смесь на полной нагрузке',
+    '{name} has no {axis} axis values; address cells by index.':
+        'У {name} нет значений оси «{axis}»; указывайте ячейки индексами.',
+    '{key} = {value} is outside {name} (0…{last}).':
+        '{key} = {value} — за пределами {name} (0…{last}).',
+    '{name} is text; text fields are not edited.':
+        '{name} — текст; текстовые поля не правятся.',
+    '{name} lies outside this file.':
+        '{name} лежит за пределами этого файла.',
+    'Rounded to the raw step: asked {asked}, will be {new} {units} (largest difference).':
+        'Округлено до шага поля: просили {asked}, будет {new} {units} (наибольшее расхождение).',
+    'The values are already like this — nothing to write.':
+        'Значения уже такие — писать нечего.',
+    'This is an axis shared by {n} maps: {list}. All of them change.':
+        'Это общая ось для {n} карт: {list}. Изменятся все.',
+    'changes an axis shared by other maps':
+        'меняет ось, общую с другими картами',
+    'Choose the Patchlist XDF in the project to use patches.':
+        'Чтобы работать с патчами, выберите Patchlist XDF в проекте.',
+    'Patch "{name}" not found in the patchlist.':
+        'Патч «{name}» не найден в патчлисте.',
+    'The patch is already in this state — nothing to write.':
+        'Патч уже в таком состоянии — писать нечего.',
+    'The XDF offset was guessed ({label}), not taken from the XDF: writing is refused. Use an XDF that matches this file.':
+        'Смещение XDF подобрано автоматически ({label}), а не взято из XDF: запись запрещена. Возьмите XDF, подходящий к этому файлу.',
+    'Software version mismatch: {text}':
+        'Не совпадает версия ПО: {text}',
+    'The draft is empty.':
+        'Черновик пуст.',
+    'Writing refused:\n{list}':
+        'Запись запрещена:\n{list}',
+    'The draft has risky changes; confirm them first.':
+        'В черновике есть рискованные правки — сначала подтвердите их.',
+    'Read-back check failed: the written file differs from the plan. Nothing was kept.':
+        'Проверка после записи не прошла: файл отличается от плана. Ничего не сохранено.',
+    'Flash the FULL 512 KB image: the changes include program code (patches).':
+        'Шить ПОЛНЫЙ образ 512 КБ: среди изменений есть программный код (патчи).',
+    'Calibration-only flash is enough (no program code changed).':
+        'Достаточно прошить только калибровку (программный код не менялся).',
+    '  Why: {text}':
+        '  Зачем: {text}',
+    'The formula of {name} cannot be inverted.':
+        'Формулу {name} нельзя обратить.',
+    'the patch switches off a function or a protection':
+        'патч отключает функцию или защиту',
+    'Unknown kind of change {kind!r}; use one of: {kinds}.':
+        'Неизвестный вид правки {kind!r}; допустимы: {kinds}.',
+    'Say which parameter or patch to change.':
+        'Укажите, какой параметр или патч менять.',
+    'Every change needs a reason: why it is made.':
+        'У каждой правки должна быть причина — зачем она.',
+    '{name} is a map {shape}; use "cells" or "region".':
+        '{name} — карта {shape}; используйте «cells» или «region».',
+    'Give value.':
+        'Укажите value.',
+    'row':
+        'строка',
+    'column':
+        'столбец',
+    'The patch has no {what} bytes for {name}.':
+        'У патча нет {what} байт для {name}.',
+    'The patch writes at 0x{off:X}, outside this {kb} KB file. Patches change program code: use the full 512 KB image.':
+        'Патч пишет по адресу 0x{off:X}, за пределами этого файла на {kb} КБ. Патчи меняют программный код — нужен полный образ 512 КБ.',
+    'At 0x{off:X} the file has {got}, not the expected {exp}: the patch is not written over unknown bytes.':
+        'По адресу 0x{off:X} в файле {got}, а не ожидаемые {exp}: поверх неизвестных байт патч не пишется.',
+    '  RISK: {text}':
+        '  РИСК: {text}',
+    '  Cells changed: {n} of {total}':
+        '  Изменено ячеек: {n} из {total}',
+    'Give {a} (index) or {b} (axis value).':
+        'Укажите {a} (индекс) или {b} (значение оси).',
+    'Give cells: a list of {{row, col, value}}.':
+        'Укажите cells — список {{row, col, value}}.',
+    'op must be one of: {ops}.':
+        'op должен быть одним из: {ops}.',
+    'Give amount.':
+        'Укажите amount.',
+    'The region is empty: check from/to.':
+        'Область пустая — проверьте from/to.',
+    '    … and {n} more':
+        '    … и ещё {n}',
+    'Every cell needs a value.':
+        'Для каждой ячейки нужен value.',
+    'patched':
+        'патченых',
+    'original':
+        'исходных',
+    'Overlaps change #{n} at 0x{off:X}: a patch and another edit must not touch the same bytes.':
+        'Пересекается с правкой #{n} по адресу 0x{off:X}: патч и другая правка не должны трогать одни и те же байты.',
+    'Overrides change #{n} at 0x{off:X}.':
+        'Перекрывает правку #{n} по адресу 0x{off:X}.',
+    'Change #{n} removed.':
+        'Правка #{n} удалена.',
+    'The draft is open in the window (Edits screen). The user checks it there and creates the new .bin.':
+        'Черновик открыт в окне (экран «Правки»). Пользователь проверяет его там и создаёт новый .bin.',
+    'Draft for {name}: {n} change(s).':
+        'Черновик для {name}: правок — {n}.',
+    'Bytes that would change: {n}.':
+        'Изменится байт: {n}.',
+    'Nothing is written yet. The user creates the new .bin in the window (call edit_show to open the draft there).':
+        'Пока ничего не записано. Новый .bin пользователь создаёт в окне (edit_show откроет там черновик).',
+    'Not added. {text}':
+        'Не добавлено. {text}',
+    'Draft: {n} change(s); nothing is written until the user creates the .bin in the window.':
+        'В черновике правок: {n}; ничего не пишется, пока пользователь не создаст .bin в окне.',
+    'The draft is cleared.':
+        'Черновик очищен.',
+    'No change #{n} in the draft.':
+        'Правки #{n} в черновике нет.',
+    'Edits work only through the live server of the open window.':
+        'Правки работают только через живой сервер открытого окна.',
+    'why: {text}':
+        'зачем: {text}',
+    'BLOCKER: {text}':
+        'ПРЕПЯТСТВИЕ: {text}',
+    'Contains patches: the user must flash the FULL 512 KB image.':
+        'Есть патчи: пользователю нужно шить ПОЛНЫЙ образ 512 КБ.',
+    'Added to the draft:':
+        'Добавлено в черновик:',
+    'REFUSED: {text}':
+        'ОТКАЗАНО: {text}',
+    'cells changed: {n} of {total}':
+        'изменено ячеек: {n} из {total}',
+    "RISK (needs the user's typed confirmation): {text}":
+        'РИСК (нужно письменное подтверждение пользователя): {text}',
+    '(asked {value})':
+        '(просили {value})',
+    '… and {n} more':
+        '… и ещё {n}',
+    'CONFIRM':
+        'ПОДТВЕРЖДАЮ',
+    'Only a file created here can be put into the project this way.':
+        'Так в проект можно поставить только файл, созданный здесь.',
+    'Could not write the file: {error}':
+        'Не удалось записать файл: {error}',
+    'AI proposals → a new .bin':
+        'предложения нейросети → новый .bin',
+    'Ask Claude in Claude Code to propose changes for {file} — they appear here at once.':
+        'Попросите Claude в Claude Code предложить правки для {file} — они сразу появятся здесь.',
+    'Byte diff':
+        'Побайтовое сравнение',
+    'Changes':
+        'Правки',
+    'Choose the XDF and the firmware the AI works on.':
+        'Выберите XDF и прошивку, с которой работает нейросеть.',
+    'Claude proposes changes through MCP; they collect here. Nothing is written until you create the new .bin. Checksums are fixed by MS4X Flasher.':
+        'Claude предлагает правки через MCP, они собираются здесь. Ничего не пишется, пока вы не создадите новый .bin. Контрольные суммы исправит MS4X Flasher.',
+    'Clear the draft':
+        'Очистить черновик',
+    'Create .bin':
+        'Создать .bin',
+    'Create the new firmware':
+        'Создать новую прошивку',
+    'Created: {name}':
+        'Создан: {name}',
+    'Edits':
+        'Правки',
+    'KB — calibration flash is enough':
+        'КБ — достаточно прошить калибровку',
+    'KB — flash the full image (patches change code)':
+        'КБ — шить полный образ (патчи меняют код)',
+    'Length':
+        'Длина',
+    'Let Claude read your firmware and the MS4X Wiki, answer questions and propose changes. Proposals go to the Edits screen; only you create the new .bin there.':
+        'Claude читает вашу прошивку и MS4X Wiki, отвечает на вопросы и предлагает правки. Предложения попадают на экран «Правки»; новый .bin создаёте только вы.',
+    'New file: {name} (+ a .changes.txt log next to it). The source file is not changed.':
+        'Новый файл: {name} (+ журнал .changes.txt рядом). Исходный файл не меняется.',
+    'No changes yet':
+        'Правок пока нет',
+    'Open the change log':
+        'Открыть журнал изменений',
+    'Remove from the draft':
+        'Убрать из черновика',
+    'The draft has risky changes (marked ⚠). Read them, then type {word} to confirm.':
+        'В черновике есть рискованные правки (отмечены ⚠). Прочитайте их и введите {word} для подтверждения.',
+    'Use as firmware {role}':
+        'Сделать прошивкой {role}',
+    'Was':
+        'Было',
+    'Why':
+        'Зачем',
+    'Will be':
+        'Будет',
+    'Writing…':
+        'Записываю…',
+    'after':
+        'стало',
+    'asked {value}':
+        'просили {value}',
+    'before':
+        'было',
+    'bytes will change':
+        'байт изменится',
+    'cells':
+        'ячейки',
+    'changes in the draft':
+        'правок в черновике',
+    'of the other version':
+        'другой версии',
+    'patch':
+        'патч',
+    'region':
+        'область',
+    'you':
+        'вы',
+    '{n} runs':
+        'участков: {n}',
+    # tuning project
+    'A folder Claude Code works in: rules (CLAUDE.md), tuning skills, the connection to this window, logs/ and analysis/. Python with pandas and charts comes with the program.':
+        'Папка, в которой работает Claude Code: правила (CLAUDE.md), скиллы тюнинга, подключение к этому окну, logs/ и analysis/. Python с pandas и графиками идёт вместе с программой.',
+    'Choose a folder for the project.':
+        'Выберите папку для проекта.',
+    'Choose a folder…':
+        'Выбрать папку…',
+    'Choose the project folder':
+        'Выберите папку проекта',
+    'Could not write the project: {error}':
+        'Не удалось записать проект: {error}',
+    'Create the project first.':
+        'Сначала создайте проект.',
+    'Create the project':
+        'Создать проект',
+    'Folder':
+        'Папка',
+    'Kept your changed files: {list}':
+        'Ваши изменённые файлы оставлены как есть: {list}',
+    'Open in Claude Code':
+        'Открыть в Claude Code',
+    'Open the folder in Claude Code: cd into it and run claude.':
+        'Откройте папку в Claude Code: перейдите в неё (cd) и запустите claude.',
+    'Project for Claude Code':
+        'Проект для Claude Code',
+    'Server':
+        'Сервер',
+    'The claude command was not found. Install Claude Code, then open the project folder in it.':
+        'Команда claude не найдена. Установите Claude Code и откройте в нём папку проекта.',
+    'Update the project':
+        'Обновить проект',
+    'Written: {n} file(s).':
+        'Записано файлов: {n}.',
+    'If ms4x.net cannot be reached: the program uses the system proxy settings, so a VPN or proxy that works in the browser works here too. Or copy ms4x_wiki.json from a computer where the reference is loaded (Reference → Save a copy) and import it.':
+        'Если ms4x.net недоступен: программа берёт системные настройки прокси, поэтому VPN или прокси, который работает в браузере, работает и здесь. Или перенесите файл ms4x_wiki.json с компьютера, где справочник загружен (Справочник → Сохранить копию), и импортируйте его.',
+    'Nothing was downloaded; the reference was not changed.':
+        'Ничего не скачалось; справочник не изменён.',
+    'stopped: the site is not reachable':
+        'остановлено: сайт недоступен',
+    'This is not an MS4X Wiki reference file (ms4x_wiki.json).':
+        'Это не файл справочника MS4X Wiki (ms4x_wiki.json).',
+    'Reference imported: {n} pages → {path}':
+        'Справочник импортирован: страниц {n} → {path}',
+    'use a reference file (ms4x_wiki.json) copied from another computer':
+        'взять файл справочника (ms4x_wiki.json), перенесённый с другого компьютера',
+    'MS4X Wiki reference file':
+        'Файл справочника MS4X Wiki',
+    'MS4X Wiki reference':
+        'Справочник MS4X Wiki',
+    'Saved: {n} pages → {path}. Rights belong to the MS4X Wiki authors: for your own computers only.':
+        'Сохранено страниц: {n} → {path}. Права принадлежат авторам MS4X Wiki: только для своих компьютеров, не для распространения.',
+    'Import from file…':
+        'Импорт из файла…',
+    'Save a copy…':
+        'Сохранить копию…',
+    'Without the reference the AI assistant still reads the firmware and the XDF, but cannot check what a parameter does — it must say so.':
+        'Без справочника нейросеть всё равно читает прошивку и XDF, но не может проверить, что делает параметр, — и обязана об этом говорить.',
+    'The MS4X Wiki reference is not loaded: the AI assistant cannot check what parameters do and has to mark such statements as unverified.':
+        'Справочник MS4X Wiki не загружен: нейросеть не может проверить, что делают параметры, и помечает такие утверждения как непроверенные.',
+    'Load it on the Reference screen':
+        'Загрузить на экране «Справочник»',
+    'MS4X Wiki, snapshot of {date} · pages {pages} of {expected} · parameters linked {params} · source {source}':
+        'MS4X Wiki, снимок от {date} · страниц {pages} из {expected} · связано параметров {params} · источник {source}',
+    'The reference is incomplete, missing pages: {list}':
+        'Справочник неполный, не хватает страниц: {list}',
+    'Press "Update from site" again: pages that are already there are kept.':
+        'Нажмите «Обновить с сайта» ещё раз: уже скачанные страницы сохранятся.',
+    'Complete: all {n} pages':
+        'Полный: все {n} страниц',
+    'The MS4X Wiki reference is incomplete: {n} page(s) missing.':
+        'Справочник MS4X Wiki неполный: не хватает страниц: {n}.',
+    'relies on the log {log}, recorded on ANOTHER firmware':
+        'опирается на лог {log}, записанный на ДРУГОЙ прошивке',
+    '  Evidence log: {name}':
+        '  Лог-основание: {name}',
+    'evidence log: {name}':
+        'лог-основание: {name}',
+    'The log is open in the window (Logs screen) for the owner.':
+        'Лог открыт в окне (экран «Логи») для владельца.',
+    'No logs in the project yet. The owner adds a TunerPro log on the Logs screen and says which firmware was in the car.':
+        'В проекте ещё нет логов. Владелец добавляет лог TunerPro на экране «Логи» и указывает, какая прошивка стояла в машине.',
+    'Logs in {folder}:':
+        'Логи в {folder}:',
+    'Log {name}':
+        'Лог {name}',
+    '{rows} rows, {dur} s, {rate} Hz (median step {step} s)':
+        '{rows} строк, {dur} с, {rate} Гц (медианный шаг {step} с)',
+    'Knock events (all of them, unfiltered): {n}':
+        'Эпизоды детонации (все, без фильтров): {n}',
+    'Flags that were ON: {n}':
+        'Флаги, которые включались: {n}',
+    'Rows the map filters drop: {stats}':
+        'Строки, которые отбрасывают фильтры карты: {stats}',
+    'Channels ({n}):':
+        'Каналы ({n}):',
+    '{log} over {map} of {firmware} (the firmware the log was recorded on).':
+        '{log} поверх {map} из {firmware} (прошивка, на которой записан лог).',
+    'Rows: {y} = {yc}; columns: {x} = {xc}. A row counts at the nearest breakpoint; the ECU interpolates, so neighbours are affected too.':
+        'Строки: {y} = {yc}; столбцы: {x} = {xc}. Строка лога считается в ближайшей точке оси; блок интерполирует, поэтому соседние ячейки тоже участвуют.',
+    'Filters {list} dropped rows: {stats}. Rows used: {n}, outside the axes (clamped to the edge): {out}.':
+        'Фильтры {list} отбросили строк: {stats}. Использовано строк: {n}, вне осей (прижаты к краю): {out}.',
+    'knock = rows where a correction got deeper (knock detected); retard = rows with any negative correction (also the slow recovery after an event).':
+        'knock = строки, где коррекция углубилась (детонация обнаружена); retard = строки с любой отрицательной коррекцией (включая медленное восстановление после эпизода).',
+    'Logs work only through the live server of the open window.':
+        'Логи работают только через живой сервер открытого окна.',
+    'There is no project yet: the owner creates it on the AI assistant screen of the window, then adds logs on the Logs screen.':
+        'Проекта ещё нет: владелец создаёт его на экране «Нейросеть», потом добавляет логи на экране «Логи».',
+    'The log cannot be laid over a map: {why}. Bind it to the firmware that was in the car (Logs screen).':
+        'Лог нельзя наложить на карту: {why}. Привяжите его к прошивке, которая стояла в машине (экран «Логи»).',
+    '{name} is a single value, not a map.':
+        '{name} — одно значение, а не карта.',
+    '{name} has no axis values in the XDF.':
+        'У {name} нет значений осей в XDF.',
+    'Which log channel is the row axis of {name}? Give y_channel.':
+        'Какой канал лога соответствует оси строк {name}? Укажите y_channel.',
+    'Which log channel is the column axis of {name}? Give x_channel.':
+        'Какой канал лога соответствует оси столбцов {name}? Укажите x_channel.',
+    '#{n} {start}-{end} s ({rows} rows, knock detected {det}x)':
+        '#{n} {start}-{end} с ({rows} строк, детонация обнаружена {det} раз)',
+    'deepest: {list}':
+        'глубже всего: {list}',
+    '{rows} rows, {dur} s, {rate} Hz':
+        '{rows} строк, {dur} с, {rate} Гц',
+    'firmware {name}':
+        'прошивка {name}',
+    'Recorded on firmware: {name}':
+        'Записан на прошивке: {name}',
+    "Owner's note: {text}":
+        'Заметка владельца: {text}',
+    'GAP in the recording: {a} -> {b} s':
+        'РАЗРЫВ в записи: {a} -> {b} с',
+    'Never change (check before trusting): {list}':
+        'Не меняются (проверьте, прежде чем доверять): {list}',
+    'Text columns skipped: {list}':
+        'Пропущены текстовые столбцы: {list}',
+    'No such channel(s): {list}. Call log_info for the channel list.':
+        'Нет таких каналов: {list}. Список каналов — в log_info.',
+    '… limit of {n} rows reached: call again with from={next}.':
+        '… достигнут предел {n} строк: вызовите снова с from={next}.',
+    'No rows of this log fall on the map with these filters.':
+        'С этими фильтрами ни одна строка лога не попадает на карту.',
+    'The log {name} is not bound to a firmware; the owner binds it on the Logs screen.':
+        'Лог {name} не привязан к прошивке; владелец привязывает его на экране «Логи».',
+    'unreadable: {error}':
+        'не читается: {error}',
+    'map {value} {units}; rows {n}':
+        'в карте {value} {units}; строк {n}',
+    '{flag}: {rows} rows, first at {first} s':
+        '{flag}: {rows} строк, впервые на {first} с',
+    ' (normal driving)':
+        ' (обычная езда)',
+    'knock {k} (cyl {cyl}), retard rows {rr}, deepest {w}°':
+        'детонация {k} (цил. {cyl}), строк с откатом {rr}, глубже всего {w}°',
+    'at {list} s':
+        'на {list} с',
+    'not bound to a firmware':
+        'не привязан к прошивке',
+    'the bound firmware file is missing: {path}':
+        'файла привязанной прошивки нет: {path}',
+    'the bound firmware file has changed since the log was added':
+        'файл привязанной прошивки изменился после добавления лога',
+    'the XDF of the bound firmware is missing: {path}':
+        'нет XDF привязанной прошивки: {path}',
+    'The log has no channel "{name}".':
+        'В логе нет канала «{name}».',
+    'Choose the firmware that was in the car.':
+        'Выберите прошивку, которая стояла в машине.',
+    'Choose the XDF for that firmware.':
+        'Выберите XDF для этой прошивки.',
+    'No log "{name}" in the project. Logs: {names}':
+        'В проекте нет лога «{name}». Логи: {names}',
+    'This does not look like a TunerPro log (no header line).':
+        'Это не похоже на лог TunerPro (нет строки заголовка).',
+    'No numeric channels in this log.':
+        'В этом логе нет числовых каналов.',
+    'no channel {name}':
+        'нет канала {name}',
+    'no throttle channel':
+        'нет канала дросселя',
+    'Unknown filter: {name}':
+        'Неизвестный фильтр: {name}',
+    'TunerPro log':
+        'Лог TunerPro',
+    'Create the project first (AI assistant screen): logs are kept in its logs/ folder, where Claude Code reads them.':
+        'Сначала создайте проект (экран «Нейросеть»): логи хранятся в его папке logs/, откуда их читает Claude Code.',
+    'The firmware that was in the car':
+        'Прошивка, которая стояла в машине',
+    'The XDF for that firmware':
+        'XDF для этой прошивки',
+    '(auto)':
+        '(авто)',
+    '+ channel':
+        '+ канал',
+    '98 RON, +12 °C, 3rd gear pulls':
+        '98-й, +12 °C, разгоны на 3-й',
+    'A copy goes into logs/; the original is not touched. Say honestly which firmware was in the car when the log was recorded.':
+        'Копия кладётся в logs/, оригинал не трогается. Укажите честно, какая прошивка стояла в машине, когда писался лог.',
+    'Add a TunerPro log':
+        'Добавить лог TunerPro',
+    'All of them, unfiltered. Click a row to zoom the chart.':
+        'Все, без фильтров. Клик по строке — приблизить график.',
+    'Chart':
+        'График',
+    'Choose channels for the chart.':
+        'Выберите каналы для графика.',
+    'Choose the log…':
+        'Выбрать лог…',
+    "Claude's analysis":
+        'Разбор Claude',
+    'Column axis channel':
+        'Канал оси столбцов',
+    'Create the project first':
+        'Сначала создайте проект',
+    'Drag across the chart to zoom. Red lines: knock detected.':
+        'Протяните мышью по графику, чтобы приблизить. Красные линии — обнаружена детонация.',
+    'Evidence log':
+        'Лог-основание',
+    'Firmware in the car':
+        'Прошивка в машине',
+    'Flags that were ON:':
+        'Флаги, которые включались:',
+    'Gaps in the recording: {list}':
+        'Разрывы в записи: {list}',
+    'Knock events: {n}':
+        'Эпизоды детонации: {n}',
+    'Log added: {name}':
+        'Лог добавлен: {name}',
+    "Logs are kept in the project's logs/ folder, where Claude Code reads them.":
+        'Логи хранятся в папке logs/ проекта, откуда их читает Claude Code.',
+    'No knock in this log.':
+        'В этом логе детонации нет.',
+    'No logs yet.':
+        'Логов пока нет.',
+    'No map overlay: {why}.':
+        'Наложения на карту нет: {why}.',
+    'No maps with axes in the XDF of this firmware.':
+        'В XDF этой прошивки нет карт с осями.',
+    'Note (fuel, weather, what you did)':
+        'Заметка (топливо, погода, что делали)',
+    'Over the firmware map':
+        'Поверх карты прошивки',
+    'Row axis channel':
+        'Канал оси строк',
+    'Rows used: {n}, outside the axes: {out}. A row counts at the nearest breakpoint.':
+        'Использовано строк: {n}, вне осей: {out}. Строка считается в ближайшей точке оси.',
+    'TunerPro logs of the project. Each one is bound to the firmware that was in the car: the map overlay reads exactly that firmware, and an edit of another firmware citing the log is a risk you confirm.':
+        'Логи TunerPro проекта. Каждый привязан к прошивке, которая стояла в машине: наложение читает именно её, а правка другой прошивки со ссылкой на этот лог — риск, который вы подтверждаете.',
+    'TunerPro logs over the maps':
+        'логи TunerPro поверх карт',
+    'Where the engine ran in this log and where knock was detected, on the map of the firmware the log was recorded on.':
+        'Где работал мотор в этом логе и где была детонация — на карте той прошивки, на которой записан лог.',
+    'Whole log':
+        'Весь лог',
+    'added {when}':
+        'добавлен {when}',
+    'another file…':
+        'другой файл…',
+    'deepest per cylinder':
+        'глубже всего по цилиндрам',
+    'detected':
+        'обнаружено',
+    'firmware in the car: {name}':
+        'прошивка в машине: {name}',
+    'knock detected':
+        'детонация обнаружена',
+    'knock detected at {t} s':
+        'детонация обнаружена на {t} с',
+    'load':
+        'нагрузка',
+    'no overrun fuel cut':
+        'без отсечки при торможении двигателем',
+    'no throttle transients':
+        'без рывков газа',
+    'retard (recovering)':
+        'откат (восстанавливается)',
+    'rows here':
+        'строки здесь',
+    'throttle %':
+        'дроссель %',
+    'time, s':
+        'время, с',
+    'warm engine only (coolant ≥ 80 °C)':
+        'только прогретый (ОЖ ≥ 80 °C)',
+    '{dur} s · {rate} Hz':
+        '{dur} с · {rate} Гц',
+    '{rows} rows · {dur} s · {rate} Hz':
+        '{rows} строк · {dur} с · {rate} Гц',
+    'rows {n}':
+        'строк {n}',
+    '{map}: BEFORE {a} (firmware {fa}) vs AFTER {b} (firmware {fb}).':
+        '{map}: ДО {a} (прошивка {fa}) и ПОСЛЕ {b} (прошивка {fb}).',
+    'Rows used after: {n}, outside the axes: {out}.':
+        'Использовано строк «после»: {n}, вне осей: {out}.',
+    'A cell visited in only one of the logs says nothing about the change there.':
+        'Ячейка, где мотор был только в одном из логов, ничего не говорит о правке в ней.',
+    'The axes of {name} differ between the two firmware files; the logs cannot be compared cell by cell.':
+        'Оси {name} в двух прошивках разные; сравнить логи по ячейкам нельзя.',
+    '{ch} mean {mean} (min {lo}, max {hi}) {units}':
+        '{ch}: среднее {mean} (мин {lo}, макс {hi}) {units}',
+    'before: {text}':
+        'до: {text}',
+    'after:  {text}':
+        'после: {text}',
+    'map {value} {units}':
+        'в карте {value} {units}',
+    'not visited':
+        'мотор здесь не был',
+    'Before: {a} (firmware {fa}) → after: {b} (firmware {fb}). Map values are the "after" ones; "was" marks cells the flash changed.':
+        'До: {a} (прошивка {fa}) → после: {b} (прошивка {fb}). Значения карты — «после»; «было» отмечает ячейки, изменённые прошивкой.',
+    'Cells show':
+        'В ячейках',
+    'Cells show the mean of {ch} {units}; small: the map value and the rows.':
+        'В ячейках среднее {ch} {units}; мелко — значение карты и число строк.',
+    'Compare with an earlier log (before)':
+        'Сравнить с более ранним логом (до)',
+    'any channel (mean per cell)':
+        'любой канал (среднее по ячейке)',
+    'closed-loop lambda only':
+        'только замкнутая лямбда-регулировка',
+    'fuel trims':
+        'коррекции топлива',
+    'knock and rows':
+        'детонация и строки',
+    'knock gone':
+        'детонация ушла',
+    'new knock':
+        'новая детонация',
+    'still knocks':
+        'детонация осталась',
+    'visited in both, no knock':
+        'в обоих логах, без детонации',
+    'visited in one log only':
+        'только в одном логе',
+    'was {v}':
+        'было {v}',
+    'Red (positive): the ECU adds fuel, the mixture was lean there. Blue (negative): it takes fuel away, rich. Without a wideband this shows the closed-loop correction only, not the full-load mixture.':
+        'Красное (плюс): блок добавляет топливо — смесь там была бедной. Синее (минус): убирает топливо — богатая. Без ШДК это только коррекция в замкнутом контуре, а не смесь на полной нагрузке.',
+    'New MS43 pages found on the site and added: {list}':
+        'На сайте найдены и добавлены новые страницы про MS43: {list}',
+    'New pages not about the MS43, skipped: {n}':
+        'Новых страниц не про MS43, пропущено: {n}',
+    'Could not read the list of pages on the site: {error}':
+        'Не удалось прочитать список страниц сайта: {error}',
+    'Found on the site: {added} MS43 page(s) added, {skipped} other page(s) skipped':
+        'Найдено на сайте: добавлено страниц про MS43 — {added}, пропущено прочих — {skipped}',
+    'Added:':
+        'Добавлены:',
+    'Skipped (not about the MS43):':
+        'Пропущены (не про MS43):',
+    'Skipped (not about the MS43) — click to add one anyway:':
+        'Пропущены (не про MS43) — нажмите, чтобы всё же добавить:',
+    'Added: {list}':
+        'Добавлено: {list}',
+    'Constant in this log (normal for slow or unused signals): {list}':
+        'Не менялись в этом логе (нормально для медленных или неиспользуемых сигналов): {list}',
+    'Constant in this log: {n} channel(s)':
+        'Не менялись в этом логе: {n} канал(ов)',
+    'Not a TunerPro logger definition (.adx): {error}':
+        'Это не файл описания логгера TunerPro (.adx): {error}',
+    'The ADX defines no channels.':
+        'В ADX нет ни одного канала.',
+    'Not a TunerPro log (.xdl): the file is too short.':
+        'Это не лог TunerPro (.xdl): файл слишком короткий.',
+    'Not a TunerPro log (.xdl): unknown header (version {v}).':
+        'Это не лог TunerPro (.xdl): неизвестный заголовок (версия {v}).',
+    'This .xdl was not recorded with this ADX (no matching packets).':
+        'Этот .xdl записан не с этой ADX (нет подходящих пакетов).',
+    'This .xdl was not recorded with this ADX: packet sizes differ.':
+        'Этот .xdl записан не с этой ADX: размеры пакетов не совпадают.',
+    'A TunerPro .xdl log needs the ADX it was recorded with.':
+        'Для лога TunerPro .xdl нужна ADX, с которой он записан.',
+    'The ADX the .xdl logs are recorded with':
+        'ADX, с которой записаны логи .xdl',
+    'TunerPro logger definition':
+        'Описание логгера TunerPro',
+    "A .csv export or TunerPro's own .xdl (decoded with the ADX: {name})":
+        'Экспорт .csv или родной .xdl TunerPro (раскодируется по ADX: {name})',
+    'ADX…':
+        'ADX…',
+    'asked when needed':
+        'спросим при добавлении',
+    'The ADX command {name} is not part of connect/monitor/disconnect; not sent.':
+        'Команда ADX {name} не входит в подключение/опрос/отключение; не отправлена.',
+    'The ADX has no macro {name}.':
+        'В ADX нет макроса {name}.',
+    'The ECU answered, but no data packet came.':
+        'Блок ответил, но пакет с данными не пришёл.',
+    'No reply {name} within {ms} ms.':
+        'Нет ответа {name} за {ms} мс.',
+    'Bad checksum in {name}.':
+        'Неверная контрольная сумма в {name}.',
+    'Unexpected reply to {name}: {hex}':
+        'Неожиданный ответ на {name}: {hex}',
+    'The ADX macro {macro} names an unknown step {name}.':
+        'Макрос ADX {macro} ссылается на неизвестный шаг {name}.',
+    'Choose the ADX the logger reads the ECU with.':
+        'Выберите ADX, по которой логгер читает блок.',
+    'Choose the COM port of the cable.':
+        'Выберите COM-порт кабеля.',
+    'Stop the recording first.':
+        'Сначала остановите запись.',
+    'A recording is already running.':
+        'Запись уже идёт.',
+    'COM port':
+        'COM-порт',
+    'Check the connection':
+        'Проверить связь',
+    'Checking the connection…':
+        'Проверяю связь…',
+    'Connecting…':
+        'Подключаюсь…',
+    'Exchange journal (also saved to logs/{file}):':
+        'Журнал обмена (сохранён и в logs/{file}):',
+    'FTDI cable: in Device Manager → the port → Advanced, a latency timer of 1 ms may raise the rate.':
+        'Кабель FTDI: в Диспетчере устройств → порт → Дополнительно задержка (Latency Timer) 1 мс может поднять частоту.',
+    'No connection: {error}':
+        'Нет связи: {error}',
+    'Record with the cable':
+        'Запись через кабель',
+    'Start recording':
+        'Начать запись',
+    'Stopping…':
+        'Останавливаю…',
+    'The ECU answers: rpm {n}, coolant {c} °C, oil {o} °C':
+        'Блок отвечает: обороты {n}, ОЖ {c} °C, масло {o} °C',
+    'The program reads the ECU itself through the K+DCAN cable, as the ADX describes ({adx}). Ignition on; with a high-speed ADX connect before starting the engine. Only you start and stop it — the AI cannot.':
+        'Программа сама читает блок через кабель K+DCAN, как описано в ADX ({adx}). Зажигание включено; со скоростной ADX подключайтесь до запуска мотора. Запускаете и останавливаете запись только вы — нейросеть не может.',
+    'connecting…':
+        'подключение…',
+    'connection lost — reconnecting':
+        'связь потеряна — переподключаюсь',
+    'coolant':
+        'ОЖ',
+    'missed replies: {e} · reconnects: {r}':
+        'пропущено ответов: {e} · переподключений: {r}',
+    'no COM ports found':
+        'COM-порты не найдены',
+    'oil':
+        'масло',
+    'recording':
+        'идёт запись',
+    'rpm':
+        'обороты',
+    'starting':
+        'запуск',
+    'the port cannot be opened':
+        'порт не открывается',
+    '{s} s · {rows} rows · {hz} Hz':
+        '{s} с · {rows} строк · {hz} Гц',
+    'EMPTY in every row (not logged or not decoded — do not use): {list}':
+        'ПУСТЫЕ во всех строках (не записаны или не раскодированы — не использовать): {list}',
+    'Empty in every row (not logged or not decoded): {list}':
+        'Пустые во всех строках (не записаны или не раскодированы): {list}',
+    'Log files lying in the project folder are not used: {list}. Add them on the Logs screen and say which firmware was in the car.':
+        'Файлы логов, лежащие в папке проекта, не используются: {list}. Добавьте их на экране «Логи» и укажите, какая прошивка стояла в машине.',
+    'throttle':
+        'дроссель',
+    'This log has no raw file to decode again.':
+        'У этого лога нет сырого файла для повторной раскодировки.',
+    'The raw file is missing: {path}':
+        'Нет сырого файла: {path}',
+    'The ADX is missing: {path}':
+        'Нет ADX: {path}',
+    'Decoded again: {n}':
+        'Раскодировано заново: {n}',
+    'decoded by an older version':
+        'раскодирован старой версией',
+    'This log was decoded by an older version of the decoder; some channels may be wrong. Its raw file is kept.':
+        'Этот лог раскодирован старой версией декодера; часть каналов может быть неверной. Сырой файл сохранён.',
+    'Decode again':
+        'Раскодировать заново',
+    'Decode all such logs again':
+        'Раскодировать заново все такие',
+    'Decoding…':
+        'Раскодирую…',
+    'DECODED BY AN OLDER DECODER: ask the owner to press Decode again on the Logs screen before trusting it':
+        'РАСКОДИРОВАН СТАРЫМ ДЕКОДЕРОМ: попросите владельца нажать «Раскодировать заново» на экране «Логи», прежде чем доверять ему',
+    'Channels that update much slower than the rows (values computed from them, like acceleration or the gear from the speed, are step-wise):':
+        'Каналы, которые обновляются гораздо реже строк (всё, что считается из них, например ускорение или передача по скорости, идёт ступеньками):',
+    '{ch}: about every {s} s, {n} different values':
+        '{ch}: примерно раз в {s} с, различных значений {n}',
+    'Physically implausible values (an atmospheric M5x cannot do this — sensor or logging artefacts; do not draw map conclusions from these rows):':
+        'Физически невозможные значения (атмосферный M5x так не может — это артефакты датчика или записи; по этим строкам выводов о картах не делать):',
+    '{n} rows above {lim}: {list}':
+        '{n} строк выше {lim}: {list}',
+    '{n} one-row spikes: {list}':
+        '{n} одиночных выбросов: {list}',
+    'Fuel trims (closed loop only; > 0 = the ECU adds fuel, the mixture was lean):':
+        'Коррекции топлива (только замкнутый контур; > 0 — блок добавляет топливо, смесь была бедной):',
+    'limits from the firmware: c_lam_min {lo} %, c_lam_max {hi} %':
+        'пределы из прошивки: c_lam_min {lo} %, c_lam_max {hi} %',
+    'limits not read from the firmware: pinned = at the extreme seen in the log':
+        'пределы из прошивки не прочитаны: «на упоре» = на крайнем значении в логе',
+    'bank {b}: no closed-loop rows':
+        'банк {b}: нет строк в замкнутом контуре',
+    'bank {b}: STFT mean {mean} %, {lo}..{hi} %; at the upper limit {top} % of the time, at the lower {bottom} %':
+        'банк {b}: STFT в среднем {mean} %, {lo}..{hi} %; на верхнем пределе {top} % времени, на нижнем {bottom} %',
+    'PINNED at the upper limit: {list}':
+        'НА УПОРЕ сверху: {list}',
+    'PINNED at the lower limit: {list}':
+        'НА УПОРЕ снизу: {list}',
+    '{label}: start {a}, end {b}':
+        '{label}: в начале {a}, в конце {b}',
+    'idle ({n} rows): STFT bank 1 {a} %, bank 2 {b} %':
+        'холостой ({n} строк): STFT банк 1 {a} %, банк 2 {b} %',
+    'injection time bank 1 {a} ms, bank 2 {b} ms':
+        'время впрыска банк 1 {a} мс, банк 2 {b} мс',
+    'airflow {lo}-{hi} kg/h ({n} rows): STFT bank 1 {a} %, bank 2 {b} %':
+        'расход воздуха {lo}-{hi} кг/ч ({n} строк): STFT банк 1 {a} %, банк 2 {b} %',
+    'the firmware of {log} ({name})':
+        'прошивка лога {log} ({name})',
+    '{a} -> {b}: {n} parameters changed, {same} the same.':
+        '{a} -> {b}: изменено параметров {n}, без изменений {same}.',
+    'The firmware of {log} cannot be used: {why}':
+        'Прошивку лога {log} нельзя использовать: {why}',
+    "The two firmware files use different XDFs; compare different software versions on the window's Different versions screen.":
+        'У двух прошивок разные XDF; разные версии ПО сравнивайте на экране «Сравнение разных версий ПО».',
+    '{label}: {warning}':
+        '{label}: {warning}',
+    'Bytes changed outside any XDF parameter (program code, patches, checksums): {n} block(s), e.g. {list}':
+        'Изменены байты вне параметров XDF (код программы, патчи, контрольные суммы): блоков {n}, например {list}',
+    'Firmware {ref} is not chosen in the window.':
+        'Прошивка {ref} не выбрана в окне.',
+    '{changed} of {total} cells changed, by {lo}..{hi} {units}':
+        'изменено {changed} из {total} ячеек, на {lo}..{hi} {units}',
+    'Gear ratios go from 1st gear down: the first is the largest.':
+        'Передаточные числа — от 1-й передачи вниз: первое самое большое.',
+    'Gear ratios must be numbers like 4.21 2.49 1.67 1.24 1.00.':
+        'Передаточные числа — числа вида 4.21 2.49 1.67 1.24 1.00.',
+    "Owner's note on the conditions:":
+        'Заметка владельца об условиях:',
+    'The car (filled in by the owner on the AI assistant screen; "not confirmed" = ask, never assume):':
+        'Машина (заполняет владелец на экране «AI-ассистент»; «не подтверждено» — спроси, не додумывай):',
+    'Log {name}: driving modes':
+        'Лог {name}: режимы езды',
+    'Idle at a standstill: {n} segment(s)':
+        'Холостой ход на месте: отрезков {n}',
+    "Full-throttle pulls (pedal >= 90 % of the log's maximum {top}, longer than 1 s): {n}":
+        'Разгоны в пол (педаль ≥ 90 % от максимума лога {top}, дольше 1 с): {n}',
+    'Knock weighted by time (share of rows with retard):':
+        'Детонация по времени (доля строк с откатом):',
+    'Where':
+        'Где',
+    'Air temperature':
+        'Температура воздуха',
+    'What bothers the owner':
+        'Что беспокоит владельца',
+    'Changed since the previous log':
+        'Изменения с прошлого лога',
+    'Note':
+        'Заметка',
+    'Speed at 1000 rpm: {list}':
+        'Скорость на 1000 об/мин: {list}',
+    'The gear cannot be computed from rpm and speed: the gear ratios, the final drive or the tyres are not filled in.':
+        'Передачу нельзя вычислить по оборотам и скорости: не заполнены передаточные числа, главная пара или шины.',
+    'knock: {rows} rows, {det} detections':
+        'детонация: строк {rows}, срабатываний {det}',
+    'Near the top rpm {top}: {rows} rows, {peaks} rpm peaks (sawtooth), injector duty max {duty} %':
+        'У максимальных оборотов {top}: строк {rows}, пиков оборотов (пила) {peaks}, загрузка форсунок до {duty} %',
+    'The rpm never came near the limiter (max below 5500).':
+        'До отсечки обороты не доходили (максимум ниже 5500).',
+    'full throttle':
+        'полный газ',
+    'warm part load':
+        'частичная нагрузка на прогретом',
+    'NOT FILLED IN: {list} — ask the owner before judging this log (they can fill it in on the Logs screen, Conditions).':
+        'НЕ ЗАПОЛНЕНО: {list} — спроси владельца, прежде чем разбирать лог (он может заполнить это на экране «Логи», «Условия»).',
+    'note: {text}':
+        'заметка: {text}',
+    'no note':
+        'без заметки',
+    '(conditions not filled in: ask before judging)':
+        '(условия не заполнены: спроси до разбора)',
+    'rpm {m} ({lo}..{hi}, spread ±{sd})':
+        'обороты {m} ({lo}..{hi}, разброс ±{sd})',
+    'The gear is not computed: the car profile has no gear ratios, final drive or tyres. Ask the owner; never assume a gearbox.':
+        'Передача не вычислена: в профиле машины нет передаточных чисел, главной пары или шин. Спроси владельца; КПП не додумывай.',
+    'The speed comes from the driven wheels or the gearbox: wheelspin does not show as rpm rising against the speed.':
+        'Скорость берётся с ведущих колёс или КПП: пробуксовка не видна как рост оборотов относительно скорости.',
+    'rpm {a} -> {b} (max {m})':
+        'обороты {a} -> {b} (макс. {m})',
+    'speed {a} -> {b} km/h':
+        'скорость {a} -> {b} км/ч',
+    'gear {g} (rpm/speed off by {e} %)':
+        'передача {g} (отклонение обороты/скорость {e} %)',
+    '{mode}: {s} s, any cylinder {share} % of the rows, {det} detections per minute; {cyl}':
+        '{mode}: {s} с, любой цилиндр — {share} % строк, срабатываний в минуту {det}; {cyl}',
+    'rpm rate: {list}':
+        'темп набора оборотов: {list}',
+    '{mode}: no rows':
+        '{mode}: строк нет',
+    'changed: {what}':
+        'изменено: {what}',
+    'gear {g}: {v} km/h':
+        '{g}-я: {v} км/ч',
+    'This log has no binding to a firmware; add it again on the Logs screen.':
+        'Лог не привязан к прошивке; добавьте его заново на экране «Логи».',
+    '3rd gear pulls':
+        'разгоны на 3-й',
+    '98 RON':
+        'АИ-98',
+    'ABS ring, front (not driven) wheels':
+        'гребёнка ABS, передние (не ведущие) колёса',
+    'ABS ring, rear (driven) wheels':
+        'гребёнка ABS, задние (ведущие) колёса',
+    'Car':
+        'Машина',
+    'Car and engine':
+        'Машина и двигатель',
+    'Claude reads this before judging the log. Can be edited at any time.':
+        'Claude читает это до разбора лога. Можно изменить в любой момент.',
+    'Conditions':
+        'Условия',
+    'E30, M54B30 swap':
+        'E30, свап M54B30',
+    'Edit':
+        'Изменить',
+    'Facts a log cannot tell. Claude uses them for the gear from rpm and speed, wheelspin and the plan of a pull. An empty field is marked "not confirmed": Claude asks instead of assuming a typical car.':
+        'Факты, которых нет в логе. Claude использует их для передачи по оборотам и скорости, пробуксовки и плана разгона. Пустое поле помечается «не подтверждено»: Claude спросит, а не подставит типовую машину.',
+    'Final drive':
+        'Главная пара',
+    'Gear ratios, 1st to top':
+        'Передаточные числа, с 1-й до высшей',
+    'Gearbox':
+        'КПП',
+    'Not filled in — Claude will ask about it first.':
+        'Не заполнено — Claude сначала спросит об этом.',
+    'Not filled in: {n} field(s).':
+        'Не заполнено полей: {n}.',
+    'Other notes':
+        'Прочее',
+    'Removed or changed':
+        'Что снято или изменено',
+    'Rolling circumference, m (if known; else from the tyres)':
+        'Длина окружности качения, м (если известна; иначе по шинам)',
+    'Save':
+        'Сохранить',
+    'Save and update the project':
+        'Сохранить и обновить проект',
+    'Saved.':
+        'Сохранено.',
+    'Tyres':
+        'Шины',
+    'Vehicle speed comes from':
+        'Откуда берётся скорость',
+    'What bothers you':
+        'Что беспокоит',
+    'What changed since the previous log':
+        'Что менялось с прошлого лога',
+    'closed road section':
+        'закрытый участок',
+    'dyno':
+        'стенд',
+    'gearbox output':
+        'выход КПП',
+    'not confirmed':
+        'не подтверждено',
+    'nothing / firmware v3 / new plugs':
+        'ничего / прошивка v3 / новые свечи',
+    'public road':
+        'дорога общего пользования',
+    'rear differential (driven wheels)':
+        'задний дифференциал (ведущие колёса)',
+    'rough idle, nothing':
+        'неровный ХХ, ничего',
+    'secondary air pump, flywheel':
+        'насос вторичного воздуха, маховик',
+    'track':
+        'трек',
+    'Reading the list of pages on the site…':
+        'Читаю список страниц на сайте…',
+    'The update failed: {error}':
+        'Обновление не удалось: {error}',
+    'Still missing: {list}':
+        'Всё ещё не хватает: {list}',
+    'no article text in the answer (the old copy is kept)':
+        'в ответе нет текста статьи (старая копия сохранена)',
+    'Checking new pages on the site':
+        'Проверяю новые страницы на сайте',
+    'Downloading pages':
+        'Скачиваю страницы',
+    'The desktop app did not open: {error}. Update Claude Code (claude update; needs 2.1.285 or newer and the Claude desktop app) or open it in a terminal.':
+        'Десктопное приложение не открылось: {error}. Обновите Claude Code (claude update; нужна версия 2.1.285 или новее и приложение Claude) или откройте в терминале.',
+    'Opened in a terminal.':
+        'Открыто в терминале.',
+    'Opened in the Claude desktop app, the last conversation of this project.':
+        'Открыто в приложении Claude, последний разговор этого проекта.',
+    'Opened in the Claude desktop app.':
+        'Открыто в приложении Claude.',
+    'Open in a terminal':
+        'Открыть в терминале',
+    'Opening…':
+        'Открываю…',
+    'Unknown car field: {field}':
+        'Неизвестное поле профиля машины: {field}',
+    'Steady driving found: {s} s in {logs}.':
+        'Ровной езды найдено: {s} с в логах {logs}.',
+    'Measured speed per 1000 rpm: {list}':
+        'Измеренная скорость на 1000 об/мин: {list}',
+    '{box}: gears {gears}, within {err} %':
+        '{box}: передачи {gears}, расхождение до {err} %',
+    'Speeds per 1000 rpm must be numbers like 9.2 15.5 23.1.':
+        'Скорости на 1000 об/мин — числа вида 9.2 15.5 23.1.',
+    'Not enough steady driving to measure the gears. Ask the owner for a short calibration drive: 5-10 s at a steady speed in each gear (on a public road too, within the rules), then add the log.':
+        'Ровной езды мало, передачи не измерить. Попроси владельца проехать коротко для калибровки: 5–10 с с постоянной скоростью на каждой передаче (можно на обычной дороге, по правилам), и добавить лог.',
+    'No gearbox of the catalogue fits the steps between these gears; ask the owner which gearbox it is.':
+        'Ни одна коробка из каталога не подходит к шагам между этими передачами; спроси владельца, какая коробка.',
+    'The logged speed is {p} % off the final drive and tyres of the profile: c_vs_fac (pulses per km), the tyres or the final drive is not what the profile says. Everything computed from the speed is off by as much.':
+        'Скорость в логе расходится с главной парой и шинами профиля на {p} %: c_vs_fac (импульсов на км), шины или главная пара не такие, как в профиле. Всё, что считается из скорости, врёт на столько же.',
+    "The ECU's own gear recognition (Current Gear (Calculated), id_gear__n_vs_cru) disagrees: {list}. Maps by gear (id_n_max_mt__gear, boost or ignition by gear) then use the wrong gear.":
+        'Собственное распознавание передачи ЭБУ (Current Gear (Calculated), id_gear__n_vs_cru) не совпадает: {list}. Карты по передачам (id_n_max_mt__gear, наддув или УОЗ по передаче) тогда берут не ту передачу.',
+    'Speeds per 1000 rpm go from 1st gear up: the first is the smallest.':
+        'Скорости на 1000 об/мин — от 1-й передачи вверх: первая самая маленькая.',
+    'with these tyres the final drive would be {fd}':
+        'с этими шинами главная пара была бы {fd}',
+    '{v} km/h ({s} s)':
+        '{v} км/ч ({s} с)',
+    '{v} km/h per 1000 rpm: ECU says {g}':
+        '{v} км/ч на 1000 об/мин: ЭБУ считает {g}',
+    'Proposed: {field}. The owner accepts or rejects it in the window (AI assistant screen, Car); until then it counts as not confirmed.':
+        'Предложено: {field}. Владелец принимает или отклоняет это в окне (экран «AI-ассистент», «Машина»); до этого значение считается неподтверждённым.',
+    'The car ("not confirmed" = ask, never assume; "proposed" = usable, but say it is not confirmed):':
+        'Машина («не подтверждено» — спроси, не додумывай; «предложено» — можно использовать, но говори, что не подтверждено):',
+    'The gear cannot be computed from rpm and speed yet: run car_calibrate on the logs, or ask the owner for the gearbox, final drive and tyres.':
+        'Передачу по оборотам и скорости пока не вычислить: запусти car_calibrate по логам или спроси владельца про коробку, главную пару и шины.',
+    'Waiting for the owner to accept in the window (AI assistant screen, Car): {list}':
+        'Ждут подтверждения владельца в окне (экран «AI-ассистент», «Машина»): {list}',
+    'Proposed to the owner (to accept in the window): {list}':
+        'Предложено владельцу (подтвердить в окне): {list}',
+    'Say where the value comes from (reason).':
+        'Укажи, откуда значение (reason).',
+    '2.93, or leave empty':
+        '2.93 или оставьте пустым',
+    'Accept':
+        'Принять',
+    'Facts a log cannot tell. Pick what you know; the speed in each gear is measured from your logs. Claude can propose values from your chat — you accept them here.':
+        'Факты, которых нет в логе. Выберите то, что знаете; скорость на каждой передаче измеряется по вашим логам. Claude может предложить значения из переписки — вы принимаете их здесь.',
+    'Gear ratios':
+        'Передаточные числа',
+    'Measure from the logs':
+        'Измерить по логам',
+    'Measuring…':
+        'Измеряю…',
+    'Needs 5–10 s of steady driving in each gear.':
+        'Нужно 5–10 с ровной езды на каждой передаче.',
+    'Proposed, waiting for you:':
+        'Предложено, ждёт вашего решения:',
+    'Reject':
+        'Отклонить',
+    'Rolling circumference, m':
+        'Длина окружности качения, м',
+    'Speed per 1000 rpm':
+        'Скорость на 1000 об/мин',
+    'gearbox name':
+        'название коробки',
+    'not measured yet':
+        'ещё не измерена',
+    'other (type it)':
+        'другая (вписать)',
+    'other changes':
+        'другие изменения',
+    'proposed':
+        'предложено',
+    "— don't know —":
+        '— не знаю —',
+    'secondary air pump removed':
+        'снят насос вторичного воздуха',
+    'catalysts removed':
+        'сняты катализаторы',
+    'rear O2 sensors removed':
+        'сняты задние лямбды',
+    'crankcase ventilation vented to atmosphere':
+        'КВКГ выведена в атмосферу',
+    'single-mass flywheel':
+        'одномассовый маховик',
+    'intake changed':
+        'изменён впуск',
+    'exhaust manifold / exhaust changed':
+        'изменён выпускной коллектор / выпуск',
+    'camshafts changed':
+        'другие распредвалы',
+    'injectors changed':
+        'другие форсунки',
+    'MAF sensor changed':
+        'другой ДМРВ',
+    'logs: {list}':
+        'логи: {list}',
+    'steady driving in gears {gears}; the other gears from the steps of {box}':
+        'ровная езда на передачах {gears}; остальные — по шагам {box}',
+    'the steps between the measured gears fit within {err} %':
+        'шаги между измеренными передачами совпадают с точностью {err} %',
+    '{fd} from the tyres, if the logged speed is right':
+        '{fd} по шинам, если скорость в логе верная',
+    'Other changes':
+        'Другие изменения',
+    'the owner said: stock E46, the speed comes from the ABS (front wheels)':
+        'владелец сказал: E46 в стоке, скорость берётся с ABS (передние колёса)',
 }

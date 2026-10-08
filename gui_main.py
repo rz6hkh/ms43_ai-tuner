@@ -2,12 +2,12 @@
 # -*- coding: utf-8 -*-
 """Window version entry point (PyInstaller builds it into ms43-ai-tuner.exe).
 
-    ms43-ai-tuner.exe [--lang en|ru] [--classic]
+    ms43-ai-tuner.exe [--lang en|ru]
 
-The interface is an HTML page in an Edge app window (ms43diff.webui);
---classic starts the older tkinter window.
+The interface is an HTML page in an Edge app window (ms43diff.webui).
 
-Hidden self-test mode for checking a built .exe:
+Hidden check modes for a built .exe:
+    ms43-ai-tuner.exe --check out.json   (what is bundled: wiki pages, project kit, Python)
     ms43-ai-tuner.exe --selftest -x def.xdf -a A.bin -b B.bin
 saves HTML/CSV/PDF into the temp folder, writes the result to the log and
 exits. It catches errors (e.g. in PDF export) that a normal window hides.
@@ -21,7 +21,8 @@ def _selftest(argv) -> int:
     import tempfile
     import traceback
 
-    from ms43diff import gui
+    from ms43diff import report
+    from ms43diff.applog import log_write
     from ms43diff.binfile import BinFile
     from ms43diff.compare import compare_bins
     from ms43diff.xdf import XdfFile
@@ -32,9 +33,9 @@ def _selftest(argv) -> int:
     xdf = opt("-x")
     a = opt("-a")
     b = opt("-b", a)
-    gui.log_write(f"[selftest] start, frozen={getattr(sys, 'frozen', False)}")
+    log_write(f"[selftest] start, frozen={getattr(sys, 'frozen', False)}")
     if not (xdf and a):
-        gui.log_write("[selftest] -x and -a are required (-b is optional)")
+        log_write("[selftest] -x and -a are required (-b is optional)")
         return 2
     try:
         result = compare_bins(XdfFile(xdf), BinFile(a), BinFile(b))
@@ -42,19 +43,53 @@ def _selftest(argv) -> int:
         html = os.path.join(out, "ms43_selftest.html")
         csv_ = os.path.join(out, "ms43_selftest.csv")
         pdf = os.path.join(out, "ms43_selftest.pdf")
-        gui.report.write_html(result, html)
-        gui.log_write(f"[selftest] HTML ok: {os.path.getsize(html)} bytes")
-        gui.report.write_csv(result, csv_)
-        gui.log_write(f"[selftest] CSV ok: {os.path.getsize(csv_)} bytes")
+        report.write_html(result, html)
+        log_write(f"[selftest] HTML ok: {os.path.getsize(html)} bytes")
+        report.write_csv(result, csv_)
+        log_write(f"[selftest] CSV ok: {os.path.getsize(csv_)} bytes")
         from ms43diff.pdfreport import HAVE_REPORTLAB, write_compare_pdf
-        gui.log_write(f"[selftest] HAVE_REPORTLAB={HAVE_REPORTLAB}")
+        log_write(f"[selftest] HAVE_REPORTLAB={HAVE_REPORTLAB}")
         write_compare_pdf(result, pdf)
-        gui.log_write(f"[selftest] PDF ok: {os.path.getsize(pdf)} bytes")
-        gui.log_write("[selftest] ALL OK")
+        log_write(f"[selftest] PDF ok: {os.path.getsize(pdf)} bytes")
+        log_write("[selftest] ALL OK")
         return 0
     except Exception:
-        gui.log_write("[selftest] ERROR:\n" + traceback.format_exc())
+        log_write("[selftest] ERROR:\n" + traceback.format_exc())
         return 3
+
+
+def _importable(name: str) -> bool:
+    import importlib
+
+    try:
+        importlib.import_module(name)
+        return True
+    except ImportError:
+        return False
+
+
+def _check(path: str) -> int:
+    """--check FILE: write what the built .exe really contains (used by CI)."""
+    import json
+    import os
+
+    from ms43diff import project, wikicache
+
+    pages = wikicache.load()
+    kit = project.kit_dir()
+    info = {
+        "wiki_pages": len(pages),
+        "wiki_params": len(wikicache.index_parameters()) if pages else 0,
+        "wiki_missing": wikicache.missing_pages(),
+        "wiki_folder": wikicache.meta().get("folder", ""),
+        "projectkit": sorted(os.listdir(os.path.join(kit, "skills"))) if os.path.isdir(kit) else [],
+        "python": project.bundled_python(),
+        "python_exists": os.path.isfile(project.bundled_python()),
+        "serial": _importable("serial.tools.list_ports"),
+    }
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(info, fh, indent=1)
+    return 0
 
 
 def main() -> int:
@@ -65,9 +100,8 @@ def main() -> int:
         set_lang(argv[argv.index("--lang") + 1])
     if "--selftest" in argv:
         return _selftest(argv)
-    if "--classic" in argv:
-        from ms43diff.gui import run
-        return run()
+    if "--check" in argv and argv.index("--check") + 1 < len(argv):
+        return _check(argv[argv.index("--check") + 1])
     from ms43diff.webui import run
     return run()
 

@@ -44,7 +44,6 @@ ROLES = {
     "xdf2": ("proj_xdf2", "x_xdf_b"),
     "bin2": ("proj_bin2", "x_bin_b"),
     "patchlist": ("proj_patchlist", "pt_xdf"),
-    "velog": ("proj_velog", "v_log"),
 }
 XDF_ROLES = {"xdf", "xdf2", "patchlist"}
 BIN_ROLES = ("bin_a", "bin_b", "bin2")
@@ -69,6 +68,44 @@ class State:
         self.compare: Optional[CompareResult] = None
         self.lock = threading.Lock()
         self._ai = None
+        # edits workspace (also used by the MCP edit tools, see mcpedits.py)
+        self._drafts: Dict[str, Any] = {}
+        self.events = 0                 # bumped when the page should refresh
+        self.show_request = ""          # a screen the AI asked the page to open
+        self.created: List[str] = []    # .bin files written in this session
+        self.log_view: Dict[str, Any] = {}  # what the AI asked the Logs screen to show
+
+    # ---- edits workspace ------------------------------------------------
+    def draft(self, bin_path: str):
+        from .. import edits
+
+        key = os.path.abspath(bin_path or "")
+        with self.lock:
+            draft = self._drafts.get(key)
+            if draft is None:
+                draft = self._drafts[key] = edits.Draft(
+                    os.path.join(os.path.dirname(i18n.settings_path()), "drafts"), key)
+            return draft
+
+    def patchlist(self) -> Optional[XdfFile]:
+        path = self.paths.get("patchlist")
+        return self.xdf(path) if path and os.path.isfile(path) else None
+
+    def notify(self) -> None:
+        self.events += 1
+
+    def show(self, view: str) -> None:
+        self.show_request = view
+        self.events += 1
+
+    def show_log(self, view: Dict[str, Any]) -> None:
+        self.log_view = dict(view)
+        self.show("logs")
+
+    def logs_dir(self) -> str:
+        """logs/ of the tuning project ("" when there is no project)."""
+        folder = self.settings.get("project_dir", "")
+        return os.path.join(folder, "logs") if folder and os.path.isdir(folder) else ""
 
     @property
     def ai(self):
@@ -135,9 +172,6 @@ def file_info(state: State, role: str) -> Dict[str, Any]:
         info["error"] = t("File not found")
         return info
     try:
-        if role == "velog":
-            info["meta"] = f"{max(1, os.path.getsize(path) // 1024)} {t('KB')}"
-            return info
         if role in XDF_ROLES:
             xdf = state.xdf(path)
             info["tag"] = xdf.title
@@ -356,7 +390,19 @@ def _labels(reader: Reader, item, which: str) -> List[str]:
 
 def map_json(state: State, title: str, mode: str, source: str = "cmp",
              role: str = "bin_a") -> Dict[str, Any]:
-    if source == "read":
+    if source == "edit":
+        from .. import edits
+
+        one = state.reader(role)
+        item = one.xdf.by_title(title)
+        if item is None:
+            raise ApiError(t("Parameter \"{name}\" not found in the XDF.", name=title))
+        plan = edits.plan_draft(one, state.draft(one.bin.path), state.patchlist())
+        changed = Reader(one.xdf, BinFile(one.bin.path, data=edits.apply_to_bytes(one.bin.data, plan)),
+                         one.offset)
+        before, after = one.matrix(item), changed.matrix(item)
+        label_reader = one
+    elif source == "read":
         one = state.reader(role)
         item = one.xdf.by_title(title)
         if item is None:
@@ -454,8 +500,6 @@ def page_strings() -> Dict[str, str]:
 # ---------------------------------------------------------------------------
 
 def _file_types(role: str):
-    if role == "velog":
-        return [(t("Logs"), "*.csv;*.txt;*.log"), (t("All files"), "*.*")]
     if role in XDF_ROLES:
         return [(t("TunerPro definitions"), "*.xdf"), (t("All files"), "*.*")]
     return [(t("Firmware files"), "*.bin"), (t("All files"), "*.*")]
@@ -481,7 +525,7 @@ def api_pick(state: State, body: Dict) -> Dict:
     titles = {"xdf": t("Choose the XDF definition"), "xdf2": t("Choose the XDF definition"),
               "bin_a": t("Choose firmware A"), "bin_b": t("Choose firmware B"),
               "bin2": t("Choose the firmware of the other version"),
-              "patchlist": t("Choose the patchlist XDF"), "velog": t("Choose the wideband log (CSV)")}
+              "patchlist": t("Choose the patchlist XDF")}
     if not _PICKING.acquire(blocking=False):
         return api_state(state, body)   # a dialog is already open
     try:
@@ -584,13 +628,12 @@ def api_log(state: State, body: Dict) -> Dict:
 
 def _ai_call(fn):
     """Run an AI-mode action, turn its expected errors into ApiError, return the new state."""
-    from .. import mcpinstall
     from .ai import AiError
 
     def wrapper(state: State, body: Dict) -> Dict:
         try:
             extra = fn(state, body) or {}
-        except (AiError, mcpinstall.InstallError) as exc:
+        except AiError as exc:
             raise ApiError(str(exc)) from exc
         out = state.ai.describe()
         out.update(extra)
@@ -639,21 +682,39 @@ def api_ai_code(state, body):
 
 
 @_ai_call
-def api_desk_install(state, body):
-    return {"message": state.ai.desktop_install(body.get("name", ""), body.get("role", ""),
-                                                body.get("lang", ""))}
+def api_ai_project_pick(state, body):
+    folder = DIALOGS.pick_folder(t("Choose the project folder"),
+                                 state.settings.get("project_dir", "") or state.settings.get("last_dir", ""))
+    return {"picked": os.path.normpath(folder) if folder else ""}
 
 
 @_ai_call
-def api_desk_remove(state, body):
-    return {"message": state.ai.desktop_remove(body.get("name", ""))}
+def api_ai_project(state, body):
+    return {"project_result": state.ai.project_create(body.get("folder", ""), body.get("name", ""),
+                                                      body.get("server", ""))}
 
 
 @_ai_call
-def api_desk_check(state, body):
-    from .. import mcpinstall
+def api_ai_car(state, body):
+    car = state.ai.car_save(body.get("car") or {})
+    return {"car": car}
 
-    return {"check": mcpinstall.check_entry(body.get("name", ""))}
+
+@_ai_call
+def api_ai_car_settle(state, body):
+    return {"car": state.ai.car_settle(str(body.get("field") or ""), bool(body.get("accept")))}
+
+
+@_ai_call
+def api_ai_car_calibrate(state, body):
+    res = state.ai.car_calibrate()
+    return {"car": res["car"], "calibration": res["text"]}
+
+
+@_ai_call
+def api_ai_project_open(state, body):
+    where = "terminal" if body.get("where") == "terminal" else "desktop"
+    return {"message": state.ai.project_open(where)}
 
 
 def _mode_call(name: str):
@@ -661,17 +722,21 @@ def _mode_call(name: str):
     def wrapper(state: State, body: Dict) -> Dict:
         from . import modes
         from ..pdfreport import PdfUnavailable
-        from ..vetune import LogError
+        from ..adx import AdxError
+        from ..tplog import LogError
 
         try:
             return getattr(modes, name)(state, body)
-        except (modes.ModeError, PdfUnavailable, LogError) as exc:
+        except (modes.ModeError, PdfUnavailable, LogError, AdxError) as exc:
             raise ApiError(str(exc)) from exc
     return wrapper
 
 
-_MODE_CALLS = ("browse", "cross", "port", "patches", "ve_setup", "ve_run", "ve_save",
-               "wiki", "wiki_section", "wiki_download", "save_report")
+_MODE_CALLS = ("browse", "cross", "port", "patches",
+               "edits_state", "edits_remove", "edits_create", "edits_use",
+               "wiki", "wiki_section", "wiki_download", "wiki_progress", "wiki_import", "wiki_export", "wiki_add", "save_report",
+               "logs_state", "logs_add", "logs_pick_adx", "logs_redecode",
+               "logger_state", "logger_test", "logger_start", "logger_stop", "logs_view", "logs_series", "logs_map", "logs_file", "logs_note")
 
 API: Dict[str, Callable[[State, Dict], Dict]] = {
     "state": api_state, "pick": api_pick, "clear": api_clear, "compare": api_compare,
@@ -680,8 +745,9 @@ API: Dict[str, Callable[[State, Dict], Dict]] = {
     "ai_state": api_ai_state, "ai_add": api_ai_add, "ai_update": api_ai_update,
     "ai_remove": api_ai_remove, "ai_start": api_ai_start, "ai_stop": api_ai_stop,
     "ai_check": api_ai_check, "ai_code": api_ai_code,
-    "desk_install": api_desk_install, "desk_remove": api_desk_remove,
-    "desk_check": api_desk_check,
+    "ai_project_pick": api_ai_project_pick, "ai_project": api_ai_project,
+    "ai_project_open": api_ai_project_open, "ai_car": api_ai_car,
+    "ai_car_settle": api_ai_car_settle, "ai_car_calibrate": api_ai_car_calibrate,
     **{name: _mode_call(name) for name in _MODE_CALLS},
 }
 
@@ -763,7 +829,9 @@ class Handler(BaseHTTPRequestHandler):
         if name != "bye":
             self.server.bye_at = None   # any call means the page is still open
         if name == "ping":
-            return self._json(200, {})
+            state = self.server.state
+            show, state.show_request = state.show_request, ""
+            return self._json(200, {"events": state.events, "show": show})
         if name == "bye":
             self.server.bye_at = time.monotonic()
             return self._json(200, {})

@@ -83,6 +83,14 @@ DEFAULT_PAGES: Tuple[str, ...] = (
 )
 
 
+def offline_hint() -> str:
+    """What to do when the site cannot be reached."""
+    return t(
+        "If ms4x.net cannot be reached: the program uses the system proxy settings, so a "
+        "VPN or proxy that works in the browser works here too. Or copy ms4x_wiki.json from "
+        "a computer where the reference is loaded (Reference → Save a copy) and import it.")
+
+
 def page_url(page: str) -> str:
     return BASE + urllib.parse.quote(page, safe="_/:")
 
@@ -91,15 +99,15 @@ def page_url(page: str) -> str:
 # HTML parsing
 # ---------------------------------------------------------------------------
 
-_SKIP_TAGS = {"script", "style", "sup", "table"}
+_SKIP_TAGS = {"script", "style", "sup"}
 _HEADINGS = {"h1", "h2", "h3", "h4", "h5", "h6"}
 
 
 class _WikiParser(HTMLParser):
-    """Extracts headings, paragraphs and lists from a MediaWiki page.
+    """Extracts headings, paragraphs, lists and tables from a MediaWiki page.
 
-    Tables are skipped: they fall apart as text anyway, and the useful ones
-    (memory map, checksum addresses) were moved to the KB by hand.
+    A table becomes one text block, a line per row with the cells joined by
+    " | " (sensor voltage scales, pinouts and CAN layouts live in tables).
     """
 
     def __init__(self):
@@ -111,6 +119,10 @@ class _WikiParser(HTMLParser):
         self._in_content = False
         self._content_depth = 0
         self._div_depth = 0
+        self._table_depth = 0
+        self._rows: List[str] = []
+        self._cells: List[str] = []
+        self._cell: Optional[List[str]] = None
 
     def handle_starttag(self, tag, attrs):
         attrs_d = dict(attrs)
@@ -126,6 +138,20 @@ class _WikiParser(HTMLParser):
             self._skip_depth += 1
             return
         if not self._in_content or self._skip_depth:
+            return
+        if tag == "table":
+            if self._table_depth == 0:
+                self._flush()
+                self._rows = []
+            self._table_depth += 1
+            return
+        if self._table_depth:
+            if tag == "tr" and self._table_depth == 1:
+                self._cells = []
+            elif tag in ("td", "th") and self._table_depth == 1:
+                self._cell = []
+            elif tag == "br" and self._cell is not None:
+                self._cell.append(" ")
             return
         if tag in _HEADINGS:
             self._flush()
@@ -148,11 +174,31 @@ class _WikiParser(HTMLParser):
             self._div_depth = max(0, self._div_depth - 1)
         if not self._in_content or self._skip_depth:
             return
+        if self._table_depth:
+            if tag == "table":
+                self._table_depth -= 1
+                if self._table_depth == 0 and self._rows:
+                    self.blocks.append(("text", "\n".join(self._rows)))
+                    self._rows = []
+            elif tag in ("td", "th") and self._table_depth == 1 and self._cell is not None:
+                self._cells.append(re.sub(r"\s+", " ", "".join(self._cell)).strip())
+                self._cell = None
+            elif tag == "tr" and self._table_depth == 1:
+                if any(self._cells):
+                    self._rows.append(" | ".join(self._cells))
+                self._cells = []
+            return
         if tag in _HEADINGS or tag in ("p", "li", "dd", "dt"):
             self._flush()
 
     def handle_data(self, data):
-        if self._in_content and not self._skip_depth and self._current:
+        if not self._in_content or self._skip_depth:
+            return
+        if self._table_depth:
+            if self._cell is not None:
+                self._cell.append(data)
+            return
+        if self._current:
             self._buf.append(data)
 
     def _flush(self):
@@ -169,6 +215,25 @@ class _WikiParser(HTMLParser):
         super().close()
 
 
+_CAUTION_LABEL = re.compile(r"^\s*(warning|attention|danger|caution|disclaimer|important)\b", re.I)
+_CAUTION_RISK = re.compile(
+    r"\b(damag\w*|harm\w*|brick\w*|destroy\w*|dangerous|not advised|not advisable|"
+    r"should be avoided|at your own risk|lean[- ]wall|non[- ]starting|"
+    r"engine (?:will not|won't|isn't) start\w*|know what you'?re doing|"
+    r"(?:lead\w* to|result\w* in|will|can|may) (?:a |the )?corrupt\w*)", re.I)
+_CAUTION_START = re.compile(r"(?:^|[.!:;(]\s*)(do not|don'?t|never|make sure|be careful)\b", re.I)
+_CAUTION_ANY = re.compile(r"\b(do not|don'?t|never|make sure|be careful)\b", re.I)
+_CAUTION_CONTEXT = re.compile(r"\b(flash\w*|boot ?mode|VIN|checksum\w*|adaptation\w*|immobili\w*)", re.I)
+
+
+def _is_caution_line(line: str) -> bool:
+    if "copyright" in line.lower():
+        return False                       # site rules, not tuning
+    return bool(_CAUTION_LABEL.search(line) or _CAUTION_RISK.search(line)
+                or _CAUTION_START.search(line)
+                or (_CAUTION_ANY.search(line) and _CAUTION_CONTEXT.search(line)))
+
+
 @dataclass
 class Section:
     heading: str
@@ -181,21 +246,14 @@ class Section:
         """Warning paragraphs inside the section.
 
         Checking the whole section is useless: "Warning:" sits in the middle,
-        not at the start, so each paragraph is checked separately.
+        not at the start, so each paragraph is checked separately. A paragraph
+        counts when it starts with a warning label, names a real risk, starts
+        with a prohibition, or has a prohibition next to flashing, the VIN,
+        checksums or adaptations. Plain notes ("Note: MS45 uses a different MAF
+        sensor") and turns of speech ("never used in production") do not.
         """
-        markers = ("warning", "note:", "caution", "important", "attention", "danger")
-        phrases = ("not advised", "should be avoided", "may damage", "will damage",
-                   "can damage", "do not ", "don't ", "never ", "at your own risk",
-                   "be careful", "make sure", "won't start", "will not start",
-                   "risk of", "otherwise the engine", "engine damage")
-        out: List[str] = []
-        for line in self.text.split("\n"):
-            low = line.strip().lower()
-            if not low:
-                continue
-            if low.startswith(markers) or any(p in low for p in phrases):
-                out.append(line.strip())
-        return out
+        return [line.strip() for line in self.text.split("\n")
+                if line.strip() and _is_caution_line(line)]
 
     @property
     def is_caution(self) -> bool:
@@ -294,43 +352,251 @@ def cache_path(folder: str) -> str:
     return os.path.join(folder, "ms4x_wiki.json")
 
 
-def download(pages: Sequence[str] = DEFAULT_PAGES, folder: Optional[str] = None,
-             progress=None, timeout: int = 30) -> Dict:
+def _write_cache(folder: str, payload: Dict) -> str:
+    """Write the cache atomically: a broken write never leaves a half file."""
+    os.makedirs(folder, exist_ok=True)
+    path = cache_path(folder)
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(payload, fh, ensure_ascii=False, indent=1)
+    os.replace(tmp, path)
+    return path
+
+
+def _fetch(url: str, timeout: int) -> str:
+    request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        return response.read().decode("utf-8", errors="replace")
+
+
+_SKIP_PAGE = re.compile(r"^(Main_Page|Special:|File:|Category:|Template:|User:|Talk:|Help:|MediaWiki:)",
+                        re.IGNORECASE)
+_ALLPAGES_LINK = re.compile(r'href="(?:/index\.php\?title=|/wiki/)([^"&#]+)"[^>]*title="[^"]*"')
+
+
+def site_pages(timeout: int = 30) -> List[str]:
+    """Names of all articles on the wiki (MediaWiki API, or the Special:AllPages page)."""
+    names: List[str] = []
+    try:
+        cont = ""
+        for _ in range(20):
+            url = (BASE.replace("index.php?title=", "api.php?") +
+                   "action=query&list=allpages&aplimit=500&format=json" +
+                   (f"&apcontinue={urllib.parse.quote(cont)}" if cont else ""))
+            data = json.loads(_fetch(url, timeout))
+            names += [p["title"].replace(" ", "_") for p in data["query"]["allpages"]]
+            cont = (data.get("continue") or {}).get("apcontinue", "")
+            if not cont:
+                break
+    except (urllib.error.URLError, OSError, ValueError, KeyError, TypeError):
+        names = []
+        html_text = _fetch(page_url("Special:AllPages"), timeout)
+        body = html_text.split("mw-allpages-body", 1)[-1]
+        names = [urllib.parse.unquote(n) for n in _ALLPAGES_LINK.findall(body)]
+    out: List[str] = []
+    for name in names:
+        if name and not _SKIP_PAGE.match(name) and name not in out:
+            out.append(name)
+    return out
+
+
+# Other control units: a page named after one of them is about that unit, even when it
+# compares itself with the MS43.
+_OTHER_ECU = re.compile(r"MS4[0125]|MS45|ME7|ME9|MSD\d|MSV\d|GS\d\d|GK\d\d|Bosch|M3\.3|MK60|EK\d",
+                        re.IGNORECASE)
+
+
+def is_ms43_page(page: "WikiPage") -> bool:
+    """Is a page about the MS43 (or about the whole MS4x family it belongs to)?"""
+    title = page.title or page.name
+    if re.search(r"MS43", title, re.IGNORECASE):
+        return True
+    if _OTHER_ECU.search(title.replace("MS4X", "").replace("MS4x", "")):
+        return False
+    if re.search(r"MS4X", title, re.IGNORECASE):
+        return True
+    text = " ".join(s.text for s in page.sections)
+    return len(re.findall(r"\bMS43", text, re.IGNORECASE)) >= 2
+
+
+def _body(page: "WikiPage") -> tuple:
+    return tuple(s.text for s in page.sections)
+
+
+def add_pages(names: Sequence[str], folder: Optional[str] = None, timeout: int = 30) -> Dict:
+    """Add pages the owner picked (e.g. ones skipped as not about the MS43)."""
+    folder = folder or user_dir()
+    payload = _read_payload(cache_path(folder)) or (
+        {**meta(), "pages": [p.to_json() for p in load()]} if load() else None)
+    if payload is None:
+        raise ValueError(t("The reference is not loaded."))
+    added, errors = [], []
+    pages = [p for p in payload["pages"] if p.get("name") not in set(names)]
+    for name in names:
+        try:
+            pages.append(parse_html(name, _fetch(page_url(name), timeout)).to_json())
+            added.append(name)
+        except Exception as exc:  # noqa: BLE001 - reported to the owner
+            errors.append((name, str(exc)))
+    extra = list(payload.get("extra", []))
+    extra += [n for n in added if n not in extra and n not in DEFAULT_PAGES]
+    clean = {k: v for k, v in payload.items() if k not in ("pages", "folder")}
+    clean.update(extra=extra, skipped=[n for n in payload.get("skipped", []) if n not in added],
+                 pages=pages)
+    if added:
+        _write_cache(folder, clean)
+        load(force=True)
+    return {"added": added, "errors": errors}
+
+
+def download(pages: Optional[Sequence[str]] = None, folder: Optional[str] = None,
+             progress=None, timeout: int = 30, discover: bool = True) -> Dict:
     """Download pages into the cache. Returns a summary.
 
-    The site needs a browser User-Agent, otherwise it answers 403.
+    The site needs a browser User-Agent, otherwise it answers 403. A page that
+    fails keeps its previous copy; when nothing could be downloaded the cache
+    is not touched at all (a failed update never wipes a working reference).
+
+    With discover, the list of all pages on the site is read too: pages that are
+    new since the last update are fetched and kept only when they are about the
+    MS43 (is_ms43_page); the others are remembered as skipped and not fetched again.
     """
     folder = folder or user_dir()
-    os.makedirs(folder, exist_ok=True)
+    old = _read_payload(cache_path(folder)) or (dict(meta()) if load() else {})
+    extra: List[str] = list(old.get("extra", []))
+    skipped: List[str] = list(old.get("skipped", []))
+    aliases: Dict[str, str] = dict(old.get("aliases", {}))
+    say = progress or (lambda *a, **k: None)
+    wanted = list(pages) if pages is not None else list(DEFAULT_PAGES) + \
+        [n for n in extra if n not in DEFAULT_PAGES]
     collected: List[WikiPage] = []
     errors: List[Tuple[str, str]] = []
-    for idx, name in enumerate(pages, 1):
-        if progress:
-            progress(idx, len(pages), name)
-        request = urllib.request.Request(page_url(name),
-                                         headers={"User-Agent": USER_AGENT})
+    for idx, name in enumerate(wanted, 1):
+        say(idx, len(wanted), name, stage="pages")
         try:
-            with urllib.request.urlopen(request, timeout=timeout) as response:
-                raw = response.read()
+            html_text = _fetch(page_url(name), timeout)
         except (urllib.error.URLError, OSError) as exc:
             errors.append((name, str(exc)))
+            if not collected and len(errors) >= 2 and not isinstance(exc, urllib.error.HTTPError):
+                # The site is not reachable at all: do not wait out every page.
+                errors.append(("…", t("stopped: the site is not reachable")))
+                break
             continue
         try:
-            html_text = raw.decode("utf-8", errors="replace")
-            collected.append(parse_html(name, html_text))
+            page = parse_html(name, html_text)
         except Exception as exc:  # noqa: BLE001 - one broken page must not break everything
             errors.append((name, t("parsing failed: {error}", error=exc)))
+            continue
+        if not page.sections:
+            # A block page, a login or bot check, or a changed site layout: keep the old copy.
+            errors.append((name, t("no article text in the answer (the old copy is kept)")))
+            continue
+        collected.append(page)
 
+    added: List[str] = []
+    new_skipped: List[str] = []
+    listing_error = ""
+    if discover and pages is None and collected:
+        say(0, 0, "", stage="listing")
+        try:
+            known = set(DEFAULT_PAGES) | set(extra) | set(skipped) | set(aliases)
+            fresh_names = [n for n in site_pages(timeout) if n not in known]
+        except (urllib.error.URLError, OSError, ValueError) as exc:
+            fresh_names, listing_error = [], str(exc)
+        bodies = {_body(p): p.name for p in collected + load()}
+        for idx, name in enumerate(fresh_names, 1):
+            say(idx, len(fresh_names), name, stage="new")
+            try:
+                page = parse_html(name, _fetch(page_url(name), timeout))
+            except Exception as exc:  # noqa: BLE001 - a broken page is just not added
+                errors.append((name, str(exc)))
+                continue
+            if not page.sections:
+                errors.append((name, t("no article text in the answer (the old copy is kept)")))
+                continue
+            twin = bodies.get(_body(page))
+            if twin:
+                aliases[name] = twin       # another name of a page we have (a redirect)
+                continue
+            if is_ms43_page(page):
+                collected.append(page)
+                extra.append(name)
+                added.append(name)
+            else:
+                skipped.append(name)
+                new_skipped.append(name)
+
+    if not collected:
+        return {"folder": folder, "pages": 0, "kept": len(load()), "errors": errors,
+                "path": "", "written": False, "added": [], "skipped": [],
+                "listing_error": listing_error, "missing": missing_pages()}
+    # A name in extra that is another name of a page we have (a redirect) is an alias.
+    by_body: Dict[tuple, str] = {}
+    for p in collected:
+        twin = by_body.setdefault(_body(p), p.name)
+        if twin != p.name and p.name not in DEFAULT_PAGES:
+            aliases[p.name] = twin
+    extra = [n for n in extra if n not in aliases]
+    collected = [p for p in collected if p.name not in aliases]
+    fresh = {p.name for p in collected}
+    keep_names = set(wanted) | set(extra)
+    kept = [p for p in load() if p.name not in fresh and p.name in keep_names]
     payload = {
         "source": "https://www.ms4x.net",
         "note": "Local reference copy of the MS4X Wiki. Rights belong to the wiki authors.",
         "fetched": time.strftime("%Y-%m-%d %H:%M"),
-        "pages": [p.to_json() for p in collected],
+        "extra": extra,
+        "skipped": skipped,
+        "aliases": aliases,
+        "pages": [p.to_json() for p in collected + kept],
     }
-    with open(cache_path(folder), "w", encoding="utf-8") as fh:
-        json.dump(payload, fh, ensure_ascii=False, indent=1)
-    return {"folder": folder, "pages": len(collected), "errors": errors,
-            "path": cache_path(folder)}
+    path = _write_cache(folder, payload)
+    load(force=True)
+    return {"folder": folder, "pages": len(collected), "kept": len(kept), "errors": errors,
+            "path": path, "written": True, "added": added, "skipped": new_skipped,
+            "listing_error": listing_error, "missing": missing_pages()}
+
+
+def _read_payload(path: str) -> Optional[Dict]:
+    """A cache file as a dict, or None when it is not a usable reference."""
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            payload = json.load(fh)
+    except (OSError, ValueError):
+        return None
+    pages = payload.get("pages") if isinstance(payload, dict) else None
+    if not isinstance(pages, list) or not pages:
+        return None
+    if not all(isinstance(p, dict) and isinstance(p.get("sections"), list) for p in pages):
+        return None
+    return payload
+
+
+def import_file(path: str, folder: Optional[str] = None) -> Dict:
+    """Use a reference file (ms4x_wiki.json) copied from another computer."""
+    payload = _read_payload(path)
+    if payload is None:
+        raise ValueError(t("This is not an MS4X Wiki reference file (ms4x_wiki.json)."))
+    # Keep only what the reader understands; the file is data from elsewhere.
+    clean = {
+        "source": str(payload.get("source", "https://www.ms4x.net"))[:200],
+        "note": "Local reference copy of the MS4X Wiki. Rights belong to the wiki authors.",
+        "fetched": str(payload.get("fetched", "?"))[:40],
+        "pages": [WikiPage.from_json(p).to_json() for p in payload["pages"]],
+    }
+    target = _write_cache(folder or user_dir(), clean)
+    load(force=True)
+    return {"path": target, "pages": len(clean["pages"])}
+
+
+def export_file(path: str) -> int:
+    """Save the reference in use to a file (to carry it to another computer)."""
+    source = meta().get("folder")
+    if not source:
+        raise ValueError(t("The reference is not loaded."))
+    with open(cache_path(source), "rb") as src, open(path, "wb") as dst:
+        dst.write(src.read())
+    return len(load())
 
 
 _LOADED: Optional[List[WikiPage]] = None
@@ -339,30 +605,52 @@ _META: Dict = {}
 
 def load(force: bool = False) -> List[WikiPage]:
     """Read the cache: the user one first, then the one shipped with the program."""
-    global _LOADED, _META
+    global _LOADED, _META, _INDEX
     if _LOADED is not None and not force:
         return _LOADED
     for folder in (user_dir(), bundled_dir()):
-        path = cache_path(folder)
-        if not os.path.isfile(path):
-            continue
-        try:
-            with open(path, "r", encoding="utf-8") as fh:
-                payload = json.load(fh)
-        except (OSError, ValueError):
-            continue
+        payload = _read_payload(cache_path(folder))
+        if payload is None:
+            continue                     # missing, broken or empty: try the next one
         _META = {k: v for k, v in payload.items() if k != "pages"}
         _META["folder"] = folder
-        _LOADED = [WikiPage.from_json(p) for p in payload.get("pages", [])]
+        _LOADED = []
+        seen = set()
+        names = set(payload.get("aliases") or {})
+        for raw in payload["pages"]:
+            page = WikiPage.from_json(raw)
+            names.add(page.name)
+            body = _body(page)
+            if body and body in seen:
+                continue            # the same article under a second name (a redirect)
+            seen.add(body)
+            _LOADED.append(page)
+        _META["names"] = sorted(names)
+        _INDEX = None
         return _LOADED
     _LOADED = []
     _META = {}
+    _INDEX = None
     return _LOADED
 
 
 def meta() -> Dict:
     load()
     return _META
+
+
+def expected_pages() -> List[str]:
+    """The standard pages plus the MS43 pages found on the site at earlier updates."""
+    aliases = meta().get("aliases") or {}
+    extra = [n for n in meta().get("extra", []) if n not in DEFAULT_PAGES and n not in aliases]
+    return list(DEFAULT_PAGES) + extra
+
+
+def missing_pages() -> List[str]:
+    """Expected pages the loaded reference lacks (empty = complete)."""
+    load()
+    have = set(_META.get("names", []))
+    return [name for name in expected_pages() if name not in have]
 
 
 def available() -> bool:
@@ -530,14 +818,26 @@ def search(query: str, limit: int = 40) -> List[Section]:
         return []
     words = [w for w in needle.split() if w]
     found: List[Tuple[int, Section]] = []
+    seen = set()
     for page in load():
         for section in page.sections:
-            haystack = (section.heading + "\n" + section.text).lower()
-            score = sum(haystack.count(w) for w in words)
-            if score:
-                if needle in section.heading.lower():
-                    score += 20
-                found.append((score, section))
+            if (section.heading, section.text) in seen:
+                continue
+            seen.add((section.heading, section.text))
+            text = section.text.lower()
+            heading = section.heading.lower()
+            hits = [w for w in words if w in text or w in heading]
+            if not hits:
+                continue
+            # many different query words and the words in the heading count most; a
+            # glossary that repeats one word a hundred times must not win
+            score = 10 * len(hits) + sum(min(text.count(w), 3) for w in hits)
+            score += 6 * sum(1 for w in words if w in heading)
+            if needle in heading:
+                score += 30
+            elif len(words) > 1 and needle in text:
+                score += 15
+            found.append((score, section))
     found.sort(key=lambda pair: -pair[0])
     return [section for _, section in found[:limit]]
 

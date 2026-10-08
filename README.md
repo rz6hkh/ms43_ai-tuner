@@ -2,19 +2,17 @@
 
 # MS43 AI-Tuner
 
-### Understand your BMW MS43 tune — not just stare at hex.
+### A careful AI tuner for the BMW Siemens MS43 (M52TU / M54).
+### It reads your firmware and your logs, finds what is wrong and proposes fixes. You decide, and you make the new `.bin`.
 
-Compare firmware in plain language, see every map as a heat‑map, read the MS4X Wiki offline,
-and let **Claude** answer questions about *your* actual file.
-
-![Windows](https://img.shields.io/badge/Windows-one%20.exe-0a7f3f)
+![Windows](https://img.shields.io/badge/Windows-one%20.exe%20%2B%20Python-0a7f3f)
 ![Original](https://img.shields.io/badge/your%20.bin-never%20modified-orange)
-![AI](https://img.shields.io/badge/AI-Claude%20via%20MCP-8b5cf6)
+![AI](https://img.shields.io/badge/AI-Claude%20Code%20via%20MCP-8b5cf6)
+![Logger](https://img.shields.io/badge/logger-K%2BDCAN%20built%20in-0b5cad)
 ![Languages](https://img.shields.io/badge/UI-English%20%7C%20Russian-1f6feb)
-![Python](https://img.shields.io/badge/core-stdlib%20only-brightgreen)
 
 
-<img src="docs/img/en-compare.png" alt="Comparing two tunes: the ignition map as a difference heat-map, the catalyst switch explained on the right" width="100%">
+<img src="docs/img/en-logs-map.png" alt="A log over the ignition map: where the engine ran and where knock was detected" width="100%">
 
 </div>
 
@@ -24,234 +22,238 @@ and let **Claude** answer questions about *your* actual file.
 
 ## Why
 
-You have a stage 1 and a stage 2 file for your M54. TunerPro shows you 3,700 objects with names
-like `ip_iga_ron_98_pl_ivvt__n__maf` and a hex editor shows you 200 changed bytes. Neither tells
-you **what the tuner actually did** — or whether it's safe.
+Tuning an MS43 means hours in TunerPro: scrolling logs, guessing which map cell the engine sat in
+when it knocked, comparing two `.bin` files byte by byte, re-reading the MS4X Wiki to remember
+what `c_conf_cat = 4` does. MS43 AI-Tuner hands that grind to **Claude Code**, and keeps you in
+charge:
 
-MS43 AI-Tuner does:
+* **Claude reads everything.** The firmware through your XDF, every row of every log, the MS4X
+  Wiki. Then it tells you what it sees, with times and cells.
+* **Claude never writes firmware.** It has no tool for that. It can only put a *proposal* into a
+  draft, with the log evidence behind it.
+* **You see every change** as a heat map and byte by byte, and you press the button that writes
+  `name_vN.bin`. MS4x Flasher flashes it and fixes the checksums.
 
-| | |
-|---|---|
-| 🔍 **What changed, in words** | *"Rev limiter +256 rpm · ignition +1.5° above 2800 rpm · catalyst monitoring off · secondary air pump disabled"* — grouped, filtered, explained. |
-| 🌡️ **Every map as a heat‑map** | Red where it was raised, blue where it was lowered. You see the *shape* of a tune in a second. |
-| 📖 **The wiki next to every parameter** | The MS4X Wiki, offline. Click `c_conf_cat` and see what `4` and `0` mean and what to do after changing it. |
-| 🤖 **Ask Claude about your file** | *"Is my rev limit higher than stock?"* — the AI reads the real values from your firmware, not from memory. |
-| 🛡️ **Read‑only by design** | Your `.bin` is never touched. Edits stay in TunerPro, where you can see them. |
+---
 
-It is an **analyst, not an editor**: built for people who tune MS43 by hand and want to know
-exactly what is in a file — their own, a downloaded one, or the one the shop flashed.
+## The loop
+
+```
+ ┌──────── plan ─────────┐   ┌──────── record ────────┐   ┌──────────── analyse ─────────────┐
+ │ Claude asks WHERE you  │ → │ built-in K+DCAN logger │ → │ the log is bound to its firmware; │
+ │ will log; writes a plan│   │ or TunerPro (.xdl/.csv)│   │ Claude reads rows, modes, maps    │
+ └────────────────────────┘   └────────────────────────┘   └─────────────────┬─────────────────┘
+ ┌───── flash ──────┐   ┌─────────── new file ───────────┐   ┌────────── changes ──────────┐
+ │ MS4x Flasher,     │ ← │ Edits: heat maps, bytes, risks │ ← │ Claude drafts them, citing   │
+ │ fixes checksums   │   │ → name_vN.bin + .changes.txt   │   │ the log (cells, times)       │
+ └─────────┬─────────┘   └────────────────────────────────┘   └──────────────────────────────┘
+           └──→ a new log in the same conditions → before / after on the same map
+```
 
 ---
 
 ## Quick start
 
-1. Download **`ms43-ai-tuner-windows.zip`** from [Releases](../../releases), unpack it anywhere.
-2. Run **`ms43-ai-tuner.exe`** — no install, no Python.
-3. On the left, pick your **XDF** and two **.bin** files. Press **Compare**.
+1. Download **`ms43-ai-tuner-windows.zip`** ([Releases](../../releases) or a build artifact) and
+   unpack it: `ms43-ai-tuner.exe` plus `python\` (Python with pandas and charts for log analysis,
+   nothing to install).
+2. Run **`ms43-ai-tuner.exe`**. On the left pick the **XDF** and your firmware (A and/or B).
+3. **AI assistant** screen → **Start** the live server.
+4. Same screen, **Project for Claude Code**: pick a folder → **Create the project** →
+   **Open in Claude Code** (the Code tab of the Claude desktop app; `>_` opens a terminal).
+5. Tell Claude: *"I want to record logs, help me prepare."*
 
-That's it. Everything you pick is remembered for next time. Bring your own `.xdf` / `.bin` — none
-are included.
-
----
-
-## A tour
-
-### Compare two files
-
-<img src="docs/img/en-compare-top.png" alt="Compare mode: changes grouped by category, parameter panel on the right" width="100%">
-
-Every changed parameter, **old → new in real units** (rpm, °CRK, km/h), grouped by system. Filter
-to maps only, raised or lowered values, or search in plain English. Click any row and the side
-panel tells you what it is, what its values mean, how it is usually tuned, what to do after
-changing it — and the warnings from the wiki. Files are labelled by name (`A · 430069_stage1`,
-`B · 430069_stage2`), so comparing two tunes is as clear as stock vs. tune. Save it as an
-**HTML, CSV or PDF** report.
-
-### Browse a firmware
-
-<img src="docs/img/en-browse.png" alt="Browse mode: the VANOS map of one firmware" width="100%">
-
-Open one file and look around: search by name or meaning (*rev limit*, *knock*, *VANOS*), jump
-through categories, open any map with its real axes.
-
-### Port your edits to another software version
-
-<img src="docs/img/en-port.png" alt="Porting plan: safe, safe by name and warned changes" width="100%">
-
-Tuned a 430069 and moving to a different build? Give it your stock, your tune and the new
-target. It works out **your** edits and sorts them: *safe to copy*, *safe by name — move the
-value by hand*, or *careful — size, scale or axes differ* (with look‑alike names suggested).
-Values are moved as **physical units**, not bytes, because the same parameter often has a
-different scale in another version. It only makes the plan; it never writes.
-
-### Check patches
-
-<img src="docs/img/en-patches.png" alt="Patches: which community patches are applied" width="100%">
-
-Load the community Patchlist XDF and see at once which patches a file has — applied, not
-applied, or only partly there.
-
-### Dial in fuelling from a wideband log
-
-<img src="docs/img/en-ve.png" alt="VE tuning: correction heat-map from a wideband log" width="100%">
-
-Drop in a wideband O2 log. It finds how far the mixture was from target in every cell of the
-fuel map and proposes a correction as a % heat‑map. It **checks the run first** — coverage,
-samples per cell, transient rows — and leaves cells with too little data alone. You get an HTML
-report and, after you confirm, a **new** `.bin` copy (recalculate checksums in TunerPro).
-
-### The MS4X Wiki, offline
-
-The whole tuning reference inside the program, searchable, with an **All warnings** list —
-every "don't do this" in one place. Because the wiki names parameters in its text, every other
-screen (and the AI) shows exactly what the wiki says about the parameter in front of you.
+The MCP server lives in the window. If Claude Code starts while the window is closed, nothing
+breaks: the tools answer *"the window is closed"*, and work as soon as you open it. No reconnect
+needed.
 
 ---
 
-## ⭐ Ask Claude about your firmware
+## What's inside
 
-<img src="docs/img/en-ai.png" alt="AI assistant: a live server for Claude Code, with Start, Check and the connect command" width="100%">
+### 🧠 A tuning project for Claude Code
 
-The program includes an **MCP server** — a bridge that lets an AI assistant read your firmware
-and the reference on demand. Then you just talk:
+<img src="docs/img/en-ai.png" alt="AI assistant screen: live MCP server and the project for Claude Code" width="100%">
 
-> *"Show me the ignition map and compare part load with full load."*
-> *"What does `c_conf_cat = 4` mean, and what breaks if I set it to 0?"*
-> *"I'm removing the cats — what do I change, and what should I watch out for?"*
-> *"Is my rev limit higher than stock? By how much in each gear?"*
+One button creates a folder Claude Code works in. It contains rules, skills, tools and the
+connection to the window:
 
-The answers come from **your file**. The AI doesn't hold the whole firmware in its head — it
-asks for exactly the values it needs, so it doesn't lose track in long conversations. The
-server is **read‑only**: it can look, never write.
-
-**Claude Code** — open the **AI assistant** screen, choose which file the AI sees and the answer
-language, press **Start**, then **Connect to Claude Code** (or copy the one‑line command).
-It runs while the window is open; switch the file in the project and the AI sees the new one at
-once. Several servers can run side by side, e.g. one per tune.
-
-**Claude Desktop** — same screen, **Claude Desktop** block → **Connect / update**. The program
-edits Claude's config for you (the Microsoft Store version too), keeps your other servers and
-makes a `.bak` first. Or drag your `.xdf` and `.bin` onto `mcp-add.bat`.
-
-<details>
-<summary>What the AI can ask for</summary>
-
-| Tool | What it returns |
+| In the project | What it is |
 |---|---|
-| `firmware_info` | software version, XDF match, size |
-| `list_categories` / `list_params` | what's in the file, by category or pattern |
-| `get_param` | one parameter: value in real units, decoded name, description |
-| `read_map` | a whole map with its axes |
-| `explain_value` | what a specific value means |
-| `search_wiki` / `wiki_page` | the reference |
-| `cautions` | safety warnings tied to a parameter |
+| `CLAUDE.md` | **your** file: notes about the car. It imports the rules, and the program never overwrites it |
+| `.claude/ms43-rules.md` | the rules: changes only through the draft, evidence first, small steps, never hide an event, people's safety first |
+| `.claude/skills/` | `logging-setup`, `wot-pull`, `log-review`, `ignition`, `fuel-trims`, `change-request` |
+| `.claude/settings.json` | protects the generated files from edits, UTF-8 for Python, a start-of-session check |
+| `analysis/STATE.md` | the current state of the car, kept short by Claude after each review |
+| `logs/` · `analysis/` | your logs · Claude's scripts, charts and reviews |
 
-</details>
+Your own skills and notes are never touched when the project is updated. A session hook tells
+Claude at start whether the window is open, whether generated files were edited by hand, and
+whether log files are lying around unadded.
+
+### 🚗 The car, without typing ratios
+
+<img src="docs/img/en-car.png" alt="Car profile: picked from lists, gear speeds measured from the logs, proposals waiting for the owner" width="100%">
+
+Analysis needs facts a log cannot tell: the gearbox, the final drive, the tyres, where the speed
+signal comes from, what was removed. You **pick** them, and nobody types ratios to three decimals:
+
+* **Lists.** Gearboxes are picked from a catalogue: ZF S5D 320Z, Getrag 220/5 · S5D 250G,
+  Getrag 240/5, Getrag 260/5, Getrag 265 dogleg, Getrag 220 4-speed, GS6-37BZ, and the automatics.
+  Typical final drives, the tyre size, the speed sensor and removed parts are picked the same way.
+* **Measured from your logs.** A short calibration drive (5–10 s steady in each gear) gives the
+  real speed per 1000 rpm in every gear. The gearbox is recognised by the *steps* between gears,
+  so a wrong speedometer doesn't fool it. The program also tells you how far the logged speed is
+  off (`c_vs_fac`, tyres or final drive) and whether the ECU's own gear recognition agrees.
+* **Claude proposes, you accept.** If you mention "single-mass flywheel from an M30" in the chat,
+  Claude files it as a proposal and you press **Accept**. Every value is *confirmed*, *proposed*
+  (with its source) or *unknown*. Claude never fills an unknown with a typical value.
+
+### 📈 Logs
+
+<img src="docs/img/en-logs.png" alt="Logs screen: recorder, conditions of the log, knock events" width="100%">
+
+* **Built-in logger.** It reads the ECU through a K+DCAN (FTDI) cable exactly as your ADX
+  describes, and sends nothing else. Check the connection, start, stop. Rpm, coolant and oil are
+  shown live, the link reconnects by itself, and every byte is kept in a raw journal.
+* **Or TunerPro as usual.** Its native **`.xdl`** is decoded with your ADX. The decoder was
+  verified against TunerPro's own export on 131 channels × 7193 rows, and the raw file is kept
+  so a log can be decoded again. A CSV export works too.
+* **Bound to its firmware.** Every log remembers which `.bin` was in the car. An edit of another
+  firmware that cites the log is flagged as a risk.
+* **Conditions.** Where it was recorded, fuel, air temperature, what bothers you, *what changed
+  since the last log*. They can be edited at any time. Claude asks before judging a log without
+  them.
+* **Knock, all of it.** Every event, unfiltered, with time, rpm, load, throttle, IAT and depth
+  per cylinder. *Detected* knock is told apart from the slow *retard* recovery afterwards.
+* **Over the map.** Where the engine ran and where it knocked, on any map with axes. You can
+  filter for a warm engine, steady throttle, no overrun or closed loop only, and show the mean of
+  any channel per cell (fuel trims!).
+* **Before / after.** Two logs on the same map: knock gone, new, still there.
+* **Honest data.** Empty channels, stuck channels, slow channels (the speed may update once a
+  second) and physically impossible spikes are all reported. Fuel trims pinned at the limits read
+  from *your* firmware are listed with their time ranges.
+
+### ✏️ Edits
+
+<img src="docs/img/en-edits.png" alt="Edits screen: the AI draft, the ignition map as a difference" width="100%">
+
+Everything Claude proposed: before → after in real units, a difference heat map, the reason, the
+**evidence log** (a click opens it on that map), the byte diff. Every edit is checked before
+writing:
+
+* the software version matches;
+* the offset is the one the XDF declares;
+* the value survives rounding;
+* a patch goes only over its original bytes.
+
+**Risky** changes need a typed confirmation word: more advance, higher limits, knock control, full
+load, protections off, or an edit of a firmware other than the logged one.
+
+**Create .bin** writes `name_vN.bin` (the source stays untouched) plus `name_vN.changes.txt` with
+the reasons and both sha256 sums. It reads the file back to check it, and tells you whether a
+64 KB calibration flash is enough.
+
+### 🔍 Compare, browse, port, patches
+
+<img src="docs/img/en-compare.png" alt="Comparing two tunes: the ignition map as a difference heat map" width="100%">
+
+* **Compare A and B**: every changed parameter in words and real units, grouped by system, with
+  the reference's warnings. Export to HTML / CSV / PDF.
+* **Browse**: search by name or meaning; any map with its real axes.
+* **Different software versions**: compare and plan porting your edits to another build (by
+  physical values, not bytes).
+* **Patches**: which Community Patchlist patches are applied.
+
+### 📚 MS4X Wiki, offline
+
+The reference is searched, linked to XDF parameters and keeps its tables (sensor scales,
+pinouts). It shows whether it is complete ("pages N of M"). An update runs in the background with
+a progress bar and finds **new MS43 pages** on the site. Redirects and blocked or empty answers
+never wipe a good copy. Warnings mean real risks only (damage, bricking, a non-starting engine,
+"not advised"), not every "note".
+
+---
+
+## What Claude can ask for: 24 MCP tools
 
 <details>
-<summary>Manual setup (without the window)</summary>
+<summary>The list</summary>
 
-Claude Code:
-```
-claude mcp add ms43 -- "C:\ms43-ai-tuner\ms43-ai-tuner-mcp.exe" -x "C:\path\def.xdf" -b "C:\path\firmware.bin" --lang en
-```
+| Area | Tools |
+|---|---|
+| Firmware | `firmware_info`, `list_categories`, `list_params`, `get_param`, `read_map`, `firmware_diff` (what a tune changed vs another file or the stock) |
+| Reference | `search_wiki`, `wiki_page`, `explain_value`, `cautions` (English originals) |
+| Draft | `edit_propose`, `edit_list`, `edit_remove`, `edit_show` (the draft only, never a file) |
+| Logs | `log_list`, `log_info` (conditions, quality, every knock event, fuel trims at limits, implausible values), `log_modes` (idle segments, full-throttle pulls with gear and rpm rate, the limiter, time-weighted knock), `log_rows`, `log_map_hits`, `log_compare`, `log_show` |
+| Car | `car_info`, `car_calibrate` (gears from steady driving), `car_propose` (a value for you to accept) |
 
-Claude Desktop (`claude_desktop_config.json`):
-```json
-{
-  "mcpServers": {
-    "ms43": {
-      "command": "C:\\ms43-ai-tuner\\ms43-ai-tuner-mcp.exe",
-      "args": ["-x", "C:\\path\\def.xdf", "-b", "C:\\path\\firmware.bin", "--lang", "en"]
-    }
-  }
-}
-```
 </details>
 
 ---
 
 ## Safety first
 
-Changing engine calibrations affects reliability and emissions, and in many countries it is
-not legal on public roads. This tool is built to make you *more* careful, not less:
+* 🔒 Your source `.bin` is **never modified**. A new file comes only from the window, on your
+  button press, as `name_vN.bin`, with a change log and a read-back check.
+* 🧮 Checksums are fixed by **MS4x Flasher** when flashing. Before the first flash, make a full
+  512 KB backup (Read → Full).
+* 🚗 Before any logging Claude asks **where**. On a public road it plans part load within the
+  traffic rules only. Full-throttle pulls are planned only for a closed section, a track or a
+  dyno, with a passenger at the laptop. It plans before and analyses after, and never coaches the
+  driver in real time.
+* 📈 A change rests on a log of the same firmware.
+* 🤖 Claude is an assistant, not a guarantee. Narrowband sensors cannot show the full-load
+  mixture; that needs a wideband.
 
-* 🔒 Your original `.bin` is **never modified**. The only thing that writes a firmware file is VE
-  tuning — always a new copy, always after you confirm.
-* 🧮 Checksums are **never recalculated** — do that in TunerPro (`cal_cks`, `cal_mon_cks`) before
-  flashing, or the ECU will go into limp mode.
-* ⚠️ If a firmware's software version doesn't match the XDF, you are warned: wrong addresses
-  mean garbage results.
-* 🤖 An AI is an assistant, not a guarantee. Check ignition, fuel and limiter changes against
-  the reference and your logs.
-
-**Use at your own risk.**
+Changing calibrations affects engine life and emissions and is illegal on public roads in many
+countries. **Use at your own risk.**
 
 ---
 
-## For the curious
+## Under the hood
+
+<details>
+<summary>How it is built</summary>
+
+* **The window** is a local web server in an Edge window. The MCP server (HTTP + token,
+  127.0.0.1 only) runs in the same process and sees the drafts, the logs and the project. Claude
+  Code reaches it through a tiny stdio bridge started by Claude Code itself, so a closed window
+  never leaves a "failed" server behind.
+* **Addressing**: the XDF offset is detected for 64 and 512 KB files. Edits are written only with
+  the offset the XDF declares.
+* **Formulas** (`<MATH>`) go through a small safe parser (with `& | << >>`), never `eval`.
+* **ADX / XDL**: packets, bit fields, lookups, output types and macros are read from your ADX. The
+  K-line echo, the DS2 checksum and the baud switch are handled by the logger.
+</details>
 
 <details>
 <summary>Command line</summary>
 
-Everything the window does is also available from the command line (`python -m ms43diff`):
-
-| Command | What it does |
-|---|---|
-| `diff A.bin B.bin -x def.xdf` | compare two files; `--html/--csv/--json/--md/--pdf` |
-| `show -x def.xdf -b fw.bin NAME [-c other.bin]` | one map or constant with its axes |
-| `find -x def.xdf "rev limit"` | search in English or Russian |
-| `list`, `dump -o values.csv` | list parameters / export the whole file to CSV |
-| `xdiff A.bin B.bin -A a.xdf -B b.xdf` | compare different software versions |
-| `port stock.bin tune.bin target.bin -A a.xdf -B b.xdf` | porting plan |
-| `patches -x patchlist.xdf -b fw.bin` | which patches are applied |
-| `vetune log.csv -x def.xdf -b fw.bin -m MAP` | VE correction; `--write new.bin` |
-| `multi`, `info`, `wiki`, `mcp`, `gui` | several files at once, file info, reference, AI server, window |
-
-Put `--lang en` or `--lang ru` before the command to choose the language.
+`python -m ms43diff`: `diff`, `show`, `find`, `list`, `dump`, `xdiff`, `port`, `patches`,
+`info`, `multi`, `wiki` (`--download`, `--import FILE`), `gui`. `--lang en|ru` goes before the
+command.
 </details>
 
 <details>
-<summary>How it works</summary>
-
-* **Addressing.** A 512 KB XDF declares `BASEOFFSET 0x70000` (calibration is the last 64 KB); the
-  offset is detected automatically, so 512 KB and 64 KB files both work. Sanity check on a stock
-  E39 M54B30: `c_gr_rax_sp` @ `0x706A2` = `EE 02` → 750 × 0.003906 = **2.93**, the 530i final drive.
-* **Values** come from the XDF `<MATH>` formulas, parsed by a small safe evaluator (never `eval`
-  on file data). Axis tables are resolved, so maps show real rpm and mg/stroke.
-* **Names** are decoded from the Siemens abbreviation scheme — `ip_iga_ron_98_pl_ivvt__n__maf` =
-  map · ignition · RON98 · part load · VANOS · rows rpm · columns airflow — plus hand‑written
-  explanations for the parameters people actually tune.
-* **Porting** matches names exactly, then after normalisation (`ron_98` ↔ `ron98`); anything
-  less certain is only suggested, never applied.
-* **The window** is a small local web server shown in an Edge app window (its own profile, no
-  tabs). `--classic` starts the older tkinter window.
-</details>
-
-<details>
-<summary>Build from source, self‑test, CI</summary>
+<summary>Build, self-test, CI</summary>
 
 ```bash
-python gui_main.py                     # the window
-python -m ms43diff --help              # the command line
-python selftest.py                     # no firmware needed
-python -m pip install pyinstaller reportlab
-python build_exe.py                    # dist/: both .exe, the .bat helpers, the zip
+python gui_main.py                 # the window
+python selftest.py                 # self-test, no files needed
+python build_exe.py --with-python  # .exe + Python for Claude (build on Windows)
 ```
 
-The core needs only the Python standard library; `reportlab` is optional, for PDF. The self‑test
-builds synthetic XDF/BIN/log/wiki files and runs every command, report, the AI server and every
-screen of the window, in English and Russian. GitHub Actions builds the Windows `.exe` on every
-`v*` tag and attaches it to the release.
-
-The screenshots above come from a demo project (`docs/screens/`), not from real firmware, and
-were taken without the wiki loaded.
+GitHub Actions builds the Windows `.exe`, runs it with `--check` and verifies that the project kit,
+the serial port library and Python are inside. The screenshots come from a demo project
+(`docs/screens/`), not from real firmware.
 </details>
 
 ---
 
 ## Credits
 
-The tuning reference comes from the [MS4X Wiki](https://www.ms4x.net) — copyright belongs to its
-authors. Huge thanks to the MS4x community; if the site helps you, the authors ask for a small
-donation (see their main page).
+The reference comes from the [MS4X Wiki](https://www.ms4x.net); all rights belong to its authors.
+Huge thanks to the MS4x community. If the site helps you, the authors ask for a small donation
+(see their main page). Gearbox ratios in the catalogue are typical values from enthusiast sources,
+and the calibration checks them against your own logs.

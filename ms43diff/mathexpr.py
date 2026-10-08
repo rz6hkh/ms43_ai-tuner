@@ -13,6 +13,10 @@ XDFs contain "X0", "X00", "X000" (a generator artefact).
 
 This is a small recursive-descent parser so that eval() is NEVER called on data
 from someone else's file.
+
+TunerPro logger definitions (.adx) also use bitwise operators ("X&8191") and
+formulas over other channels ("(TI*RPM)/1200"), hence &, |, <<, >> and
+Equation.evaluate() with several variables. "^" stays a power, as in XDF.
 """
 
 from __future__ import annotations
@@ -29,7 +33,7 @@ _TOKEN_RE = re.compile(
         (?P<num>(?:\d+\.\d*|\.\d+|\d+)(?:[eE][+-]?\d+)?)
       | (?P<hex>0[xX][0-9a-fA-F]+)
       | (?P<ident>[A-Za-z_][A-Za-z_0-9]*)
-      | (?P<op>\*\*|[-+*/%^(),])
+      | (?P<op>\*\*|<<|>>|[-+*/%^(),&|])
     )
     """,
     re.VERBOSE,
@@ -100,7 +104,10 @@ def _tokenize(src: str):
 
 
 class _Parser:
-    """expr := term (('+'|'-') term)*
+    """bor := band ('|' band)*
+    band := shift ('&' shift)*
+    shift := expr (('<<'|'>>') expr)*
+    expr := term (('+'|'-') term)*
     term := unary (('*'|'/'|'%') unary)*
     unary := ('+'|'-') unary | power
     power := atom ('^' unary)?          # right-associative
@@ -131,10 +138,33 @@ class _Parser:
         return None
 
     def parse(self) -> float:
-        value = self.expr()
+        value = self.bor()
         if self.peek() is not None:
             raise MathError(t("extra characters at the end of formula {src!r}", src=self.src))
         return value
+
+    def bor(self) -> float:
+        value = self.band()
+        while self.accept_op("|"):
+            value = float(_int(value, self.src) | _int(self.band(), self.src))
+        return value
+
+    def band(self) -> float:
+        value = self.shift()
+        while self.accept_op("&"):
+            value = float(_int(value, self.src) & _int(self.shift(), self.src))
+        return value
+
+    def shift(self) -> float:
+        value = self.expr()
+        while True:
+            op = self.accept_op("<<", ">>")
+            if op is None:
+                return value
+            n = _int(self.expr(), self.src)
+            if not 0 <= n < 64:
+                raise MathError(t("bad shift {n} in formula {src!r}", n=n, src=self.src))
+            value = float(_int(value, self.src) << n if op == "<<" else _int(value, self.src) >> n)
 
     def expr(self) -> float:
         value = self.term()
@@ -184,7 +214,7 @@ class _Parser:
         if tok.kind == "hex":
             return float(int(tok.text, 16))
         if tok.kind == "op" and tok.text == "(":
-            value = self.expr()
+            value = self.bor()
             close = self.take()
             if not (close.kind == "op" and close.text == ")"):
                 raise MathError(t("missing closing bracket in {src!r}", src=self.src))
@@ -196,9 +226,9 @@ class _Parser:
                 self.i += 1
                 args = []
                 if not (self.peek() and self.peek().kind == "op" and self.peek().text == ")"):
-                    args.append(self.expr())
+                    args.append(self.bor())
                     while self.accept_op(","):
-                        args.append(self.expr())
+                        args.append(self.bor())
                 close = self.take()
                 if not (close.kind == "op" and close.text == ")"):
                     raise MathError(t("missing closing bracket of function {name} in {src!r}",
@@ -218,6 +248,13 @@ class _Parser:
                 return _CONSTS[lowered]
             raise MathError(t("unknown variable {name!r} in formula {src!r}", name=name, src=self.src))
         raise MathError(t("unexpected {tok!r} in formula {src!r}", tok=tok.text, src=self.src))
+
+
+def _int(value: float, src: str) -> int:
+    """Operand of a bitwise operator: must be a whole number."""
+    if value != int(value):
+        raise MathError(t("bitwise operator on a fraction in formula {src!r}", src=src))
+    return int(value)
 
 
 class Equation:
@@ -240,18 +277,41 @@ class Equation:
     def __call__(self, raw: float) -> float:
         return self.apply(raw)
 
-    def apply(self, raw: float) -> float:
-        """Raw flash value -> physical value."""
+    @property
+    def error(self) -> Optional[str]:
+        """Why the formula cannot be used, or None. A broken formula reads as
+        the raw value, so writing through it must be refused."""
         if self._broken:
-            return float(raw)
+            return self._broken
+        try:
+            probe = {name: 1.0 for name in self.var_names}
+            probe["X"] = 1.0
+            self.evaluate(probe)
+        except MathError as exc:
+            return str(exc)
+        except (ValueError, OverflowError, ZeroDivisionError):
+            return None  # fine in general, fails only for this probe value
+        return None
+
+    def evaluate(self, variables: Dict[str, float]) -> float:
+        """Evaluate with named variables; raises MathError on any problem."""
+        if self._broken:
+            raise MathError(self._broken)
+        try:
+            return _Parser(list(self._tokens), variables, self.source).parse()
+        except (ValueError, OverflowError, ZeroDivisionError) as exc:
+            if isinstance(exc, MathError):
+                raise
+            raise MathError(str(exc)) from exc
+
+    def apply(self, raw: float) -> float:
+        """Raw flash value -> physical value (the raw value if the formula fails)."""
         variables = {name: raw for name in self.var_names} if self.var_names else {}
         variables.setdefault("X", raw)
         variables.setdefault("x", raw)
         try:
-            return _Parser(list(self._tokens), variables, self.source).parse()
+            return self.evaluate(variables)
         except MathError:
-            return float(raw)
-        except (ValueError, OverflowError, ZeroDivisionError):
             return float(raw)
 
     # ------------------------------------------------------------------

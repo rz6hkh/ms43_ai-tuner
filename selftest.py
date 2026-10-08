@@ -63,6 +63,12 @@ def test_math() -> None:
     check("linearity detected", eq.is_linear, True)
     check("inverse conversion", eq.invert(0.0), 64.0)
     check("scale description", eq.describe("°C"), "1 bit = 0.75 °C, offset -48 °C")
+    # logger definitions (.adx) use bit masks and formulas over other channels
+    check("bit mask X&8191", Equation("(X&8191)*0.5").apply(9000), 404.0)
+    check("shift and or", Equation("(X<<1)|1").apply(3), 7.0)
+    check("formula over channels", Equation("(TI*RPM)/1200").evaluate({"TI": 10, "RPM": 6000}), 50.0)
+    check("a broken formula is reported", Equation("0.5*").error is not None, True)
+    check("a good formula has no error", Equation("0.375*X-23.625").error, None)
 
 
 def test_embedded() -> None:
@@ -171,6 +177,65 @@ def _i18n_scan():
     return missing, bad_calls, literals, comments
 
 
+def test_car() -> None:
+    print("\n--- Car profile ---")
+    from ms43diff import car as carmod
+
+    c = carmod.normalize({"ratios": "4,21 2.49 1.67 1.24 1.00", "final_drive": "2.93",
+                          "tire": "205/55 R16", "speed_sensor": "nonsense"})
+    check("car: ratios parsed, unknown sensor refused", (c["ratios"][0], c["speed_sensor"]), (4.21, "unknown"))
+    check("car: tyre circumference from the size", 1.9 < (carmod.tire_circumference("205/55 R16") or 0) < 2.0, True)
+    c["circumference"] = 1.872
+    check("car: the gear from rpm and speed", carmod.gear_for(4000, 61.6, c)[0], 2)
+    check("car: no gear without ratios", carmod.gear_for(4000, 61.6, carmod.normalize({})), None)
+    try:
+        carmod.normalize({"ratios": "1.00 2.49"})
+        check("car: ratios in the wrong order refused", False, True)
+    except ValueError:
+        check("car: ratios in the wrong order refused", True, True)
+    check("car: an empty field is not confirmed", "not confirmed" in carmod.rules_text(carmod.normalize({})), True)
+
+    import shutil
+    import tempfile
+
+    import tests_fixtures as tf
+    tmp = tempfile.mkdtemp(prefix="ms43car_")
+    try:
+        log = os.path.join(tmp, "gears.csv")
+        with open(log, "w", encoding="utf-8") as fh:
+            fh.write(tf.gear_log())
+        res = carmod.calibrate([log], carmod.normalize({"circumference": 1.872, "final_drive": 2.93}))
+        best = res["matches"][0]
+        check("car calibration: 4 steady gears found, the gearbox by its steps",
+              (len(res["gears"]), best["gearbox"], best["gears"]), (4, "zf_s5d_320z", [2, 3, 4, 5]))
+        check("car calibration: the logged speed 2 % high is found, ECU gears agree",
+              (round(best["speed_error"] * 100), list(res["ecu"].values())), (2, [2, 3, 4, 5]))
+        carmod.save(tmp, {"tire": "", "circumference": "1.872"})
+        proposed = carmod.apply_calibration(tmp, res)
+        car = carmod.load(tmp)
+        check("car calibration: proposed, not confirmed",
+              (proposed, carmod.effective(car)["_state"]["gearbox"],
+               "proposed, source: logs: gears.csv" in carmod.rules_text(car)),
+              (["per_1000", "gearbox", "final_drive"], "proposed", True))
+        car = carmod.settle(tmp, "gearbox", True)
+        car = carmod.settle(tmp, "final_drive", False)
+        check("car: an accepted proposal is confirmed, a rejected one is gone",
+              (car["gearbox"], car["ratios"][0], car["final_drive"],
+               [p["field"] for p in car["proposals"]]), ("zf_s5d_320z", 4.21, None, ["per_1000"]))
+        check("car: the gear from the measured speeds", carmod.gear_for(3000, 47.0, car)[0], 2)
+        k = 60 * 1.872 / 3.64
+        boxes = [carmod.match([k / r for r in box][1:4])[0]["gearbox"]
+                 for box in ([3.72, 2.02, 1.32, 1.00, 0.81], [3.83, 2.20, 1.40, 1.00, 0.81])]
+        check("car: Getrag 240 and 260 told apart by their steps", boxes, ["getrag_240", "getrag_260"])
+        car = carmod.save(tmp, {"model": "E30"})
+        check("car: the owner's form keeps the measured values", (car["model"], car["gearbox"],
+              len(car["proposals"])), ("E30", "zf_s5d_320z", 1))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    from ms43diff import tplog
+    check("integer formatting keeps the zeros", (tplog.fmt(1240, 0), tplog.fmt(1.50, 2)), ("1240", "1.5"))
+
+
 def test_i18n() -> None:
     print("\n--- Interface language ---")
     from ms43diff import i18n
@@ -220,11 +285,11 @@ def _run_cli(argv) -> tuple:
 
 
 def _check_mcp(f: dict, lang: str, cyr) -> None:
-    """Talk to the MCP server over stdio exactly as Claude Desktop does."""
-    import json
-    import subprocess
+    """Talk to the MCP server over HTTP exactly as Claude Code does."""
+    import socket
 
-    root = os.path.dirname(os.path.abspath(__file__))
+    from ms43diff import mcphttp
+
     requests = [
         {"jsonrpc": "2.0", "id": 1, "method": "initialize",
          "params": {"protocolVersion": "2024-11-05"}},
@@ -237,13 +302,15 @@ def _check_mcp(f: dict, lang: str, cyr) -> None:
         {"jsonrpc": "2.0", "id": 5, "method": "tools/call",
          "params": {"name": "firmware_info", "arguments": {}}},
     ]
-    stdin = "\n".join(json.dumps(r) for r in requests) + "\n"
-    proc = subprocess.run(
-        [sys.executable, os.path.join(root, "mcp_main.py"), "--xdf", f["xdf"],
-         "--bin", f["stock"], "--lang", lang],
-        input=stdin.encode("utf-8"), capture_output=True, timeout=60,
-    )
-    answers = [json.loads(line) for line in proc.stdout.decode("utf-8").splitlines() if line]
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
+    server = mcphttp.McpHttpServer("selftest", port, "t0ken", lambda: (f["xdf"], f["stock"]), lang)
+    server.start()
+    try:
+        answers = mcphttp.call(server.url, "t0ken", requests)
+    finally:
+        server.stop()
     check(f"[{lang}] MCP answers every request", [a.get("id") for a in answers], [1, 2, 3, 4, 5])
     tools = answers[1]["result"]["tools"] if len(answers) > 1 else []
     check(f"[{lang}] MCP lists its tools", len(tools) >= 9, True)
@@ -309,8 +376,11 @@ def _check_web(f: dict, lang: str, cyr) -> None:
         check(f"[{lang}] live MCP server for Claude Code answers", (live["ok"], live["tools"] >= 9),
               (True, True))
         check(f"[{lang}] live MCP server shows the chosen firmware", "tuned.bin" in live["info"], True)
+        edited = _check_edits(f, lang, call, base, srv.token)
+        _check_project(f, lang, call)
+        logs = _check_logs(f, lang, call, base, srv.token)
         modes = _check_web_modes(f, lang, call, state)
-        text = json.dumps([st, cmp_, param, m] + modes, ensure_ascii=False)
+        text = json.dumps([st, cmp_, param, m] + modes + edited + logs, ensure_ascii=False)
         if lang == "en":
             check("[en] web API answers without Russian", bool(cyr.search(text)), False)
         else:
@@ -321,7 +391,7 @@ def _check_web(f: dict, lang: str, cyr) -> None:
 
 
 def _check_web_modes(f: dict, lang: str, call, state) -> list:
-    """The other window modes: browse, versions, port plan, patches, VE, reference."""
+    """The other window modes: browse, versions, port plan, patches, reference."""
     import tests_fixtures
     from ms43diff import wikicache
     from ms43diff.webui import dialogs
@@ -359,19 +429,6 @@ def _check_web_modes(f: dict, lang: str, call, state) -> list:
         pa = call("patches", {"role": "bin_b"})
         check(f"[{lang}] patch found applied in the tune", pa["stats"], {"total": 1, "applied": 1})
 
-        state.paths["velog"] = f["log"]
-        setup = call("ve_setup", {"role": "bin_a"})
-        check(f"[{lang}] VE: log columns guessed",
-              (setup["rows"], setup["guess"].get("rpm"), setup["guess"].get("lambda")),
-              (120, "Engine Speed", "Wideband Lambda"))
-        ve = call("ve_run", {"role": "bin_a", "map": "ip_iga_ron_98_pl_ivvt__n__maf",
-                             "min_samples": 4})
-        check(f"[{lang}] VE: cells corrected", ve["stats"]["changed"] > 0, True)
-        answers["path"] = os.path.join(out, "ve.bin")
-        saved = call("ve_save", {"kind": "bin"})
-        check(f"[{lang}] VE: tuned firmware written",
-              (saved["cells"] > 0, os.path.getsize(answers["path"])), (True, os.path.getsize(f["stock"])))
-
         tests_fixtures.install_wiki(os.environ["APPDATA"])
         wikicache.load(force=True)
         wiki = call("wiki")
@@ -381,10 +438,628 @@ def _check_web_modes(f: dict, lang: str, call, state) -> list:
         sec = call("wiki_section", {"id": 0})
         check(f"[{lang}] reference section has a warning line",
               any(line["warn"] for line in sec["lines"]), True)
-        return [br, found, cross, port, pa, setup, ve, warn, sec]
+        return [br, found, cross, port, pa, warn, sec]
     finally:
         dialogs.DIALOGS.save_file = saved_dialog
-        state.paths.update(xdf2="", bin2="", patchlist="", velog="")
+        state.paths.update(xdf2="", bin2="", patchlist="")
+
+
+def _check_edits(f: dict, lang: str, call, base: str, token: str) -> list:
+    """Edits: the AI proposes through MCP, the window checks and writes a new .bin."""
+    import json
+    import socket
+    import urllib.error
+    import urllib.request
+
+    from ms43diff import mcphttp
+    from ms43diff.binfile import BinFile, Reader
+    from ms43diff.xdf import XdfFile
+
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
+    call("ai_update", {"name": "ms43", "changes": {"port": port, "role": "bin_a"}})
+    ai = call("ai_start", {"name": "ms43"})
+    url, mcp_token = ai["servers"][0]["url"], ai["servers"][0]["command"].split("Bearer ")[1].rstrip('"')
+
+    def tool(name, **arguments):
+        answer = mcphttp.call(url, mcp_token, [{"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                                                "params": {"name": name, "arguments": arguments}}])
+        return answer[0]["result"]["content"][0]["text"]
+
+    def ping():
+        req = urllib.request.Request(base + "/api/ping", data=b"{}",
+                                     headers={"X-Token": token, "Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=30) as res:
+            return json.loads(res.read().decode("utf-8"))
+
+    try:
+        call("edits_remove", {"role": "bin_a", "all": True})
+        before = ping()["events"]
+        added = tool("edit_propose", kind="value", target="c_gr_rax_sp", value=3.07,
+                     reason="shorter final drive")
+        check(f"[{lang}] MCP edit: a change is added", "#" in added and "3.070" in added, True)
+        refused = tool("edit_propose", kind="value", target="c_gr_rax_sp", value=999, reason="too big")
+        check(f"[{lang}] MCP edit: a value that does not fit is refused", "999" in refused
+              and "#2" not in refused, True)
+        red = tool("edit_propose", kind="region", target="ip_iga_ron_98_pl_ivvt__n__maf", op="add",
+                   amount=1.5, y_from=2500, y_to=4000, x_from=200, x_to=300, reason="more advance")
+        check(f"[{lang}] MCP edit: more advance is marked as a risk", "⚠" in red or "RISK" in red
+              or "РИСК" in red, True)
+        check(f"[{lang}] MCP edit: the window is told", ping()["events"] > before, True)
+        tool("edit_show")
+        check(f"[{lang}] MCP edit: the window opens the Edits screen", ping()["show"], "edits")
+        st = call("edits_state", {"role": "bin_a"})
+        check(f"[{lang}] edits screen: two changes, risky, writable",
+              (len(st["changes"]), st["red"], st["ok"], st["bytes"]), (2, True, True, 6))
+        try:
+            call("edits_create", {"role": "bin_a"})
+            unconfirmed = "written"
+        except urllib.error.HTTPError as exc:
+            unconfirmed = exc.code
+        check(f"[{lang}] edits: a risky draft needs the typed confirmation", unconfirmed, 400)
+        made = call("edits_create", {"role": "bin_a", "confirm": st["confirm_word"]})
+        check(f"[{lang}] edits: a new .bin and a change log are written",
+              (os.path.isfile(made["path"]), os.path.isfile(made["notes"]),
+               made["name"].startswith("stock_v")), (True, True, True))
+        reader = Reader(XdfFile(f["xdf"]), BinFile(made["path"]))
+        check(f"[{lang}] edits: the new file has the new values",
+              round(reader.values(reader.xdf.by_title("c_gr_rax_sp"))[0], 3), 3.07)
+        check(f"[{lang}] edits: the source file is untouched",
+              BinFile(f["stock"]).data == open(f["stock"], "rb").read()
+              and round(Reader(XdfFile(f["xdf"]), BinFile(f["stock"])).values(
+                  reader.xdf.by_title("c_gr_rax_sp"))[0], 4), 2.9295)
+        check(f"[{lang}] edits: the draft is empty after writing",
+              len(call("edits_state", {"role": "bin_a"})["changes"]), 0)
+        return [added, refused, red, st]
+    finally:
+        call("ai_stop", {"name": "ms43"})
+
+
+def _check_logs(f: dict, lang: str, call, base: str, token: str) -> list:
+    """Logs bound to a firmware: window screen, MCP tools, evidence in edits."""
+    import json
+    import socket
+    import urllib.request
+
+    from ms43diff import mcphttp, tplog
+
+    folder = os.path.join(call("ai_state")["project"]["folder"], "logs")
+    name = os.path.basename(tplog.add_log(f["tplog"], folder, f["stock"], f["xdf"], "test"))
+    other = os.path.join(os.path.dirname(f["tplog"]), "other_fw.csv")
+    with open(f["tplog"], "rb") as src, open(other, "wb") as dst:
+        dst.write(src.read())
+    tplog.add_log(other, folder, f["tuned"], f["xdf"])
+    st = call("logs_state", {})
+    check(f"[{lang}] logs: both logs listed and bound",
+          sorted((l["name"], l["firmware"], l["problem"], l["events"]) for l in st["logs"]),
+          [(name, "stock.bin", "", 2), ("other_fw.csv", "tuned.bin", "", 2)])
+    view = call("logs_view", {"log": name})
+    check(f"[{lang}] logs: knock events and the overrun flag",
+          ([e["det"] for e in view["events"]], [x["flag"] for x in view["flags"]]),
+          ([2, 1], ["Trailing Throttle Fuel Cut"]))
+    over = call("logs_map", {"log": name, "map": "ip_iga_ron_98_pl_ivvt__n__maf"})
+    cell = over["rows"][1][1]
+    check(f"[{lang}] logs: overlay finds the knock cell (2500 rpm, 200 mg/stk)",
+          (over["y_channel"], over["x_channel"], cell["k"], cell["cyl"]),
+          ("Engine Speed", "Engine Load Ignition", 2, ["4"]))
+    check(f"[{lang}] logs: recovery is retard, not knock", (over["rows"][2][2]["k"], over["rows"][2][2]["r"] > 0),
+          (0, True))
+    raw = call("logs_map", {"log": name, "map": "ip_iga_ron_98_pl_ivvt__n__maf", "filters": []})
+    check(f"[{lang}] logs: without filters the cold idle and the stab count too",
+          (raw["used"], raw["rows"][2][3]["k"]), (700, 1))
+    trims = call("logs_map", {"log": name, "map": "ip_iga_ron_98_pl_ivvt__n__maf",
+                              "value_channel": "Short Term Fuel Trim Bank 1",
+                              "filters": ["warm", "closed_loop"]})
+    check(f"[{lang}] logs: fuel trim mean per cell (closed loop only)",
+          (trims["rows"][1][1]["m"], trims["rows"][2][2]["m"], trims["filter_stats"]["closed_loop"] > 0),
+          ("4", "-2", True))
+    both = call("logs_map", {"log": "other_fw.csv", "map": "ip_iga_ron_98_pl_ivvt__n__maf",
+                             "compare": name})
+    check(f"[{lang}] logs: before/after shows the changed map and the knock in both logs",
+          (both["compare"], both["rows"][2][2].get("was") is not None, both["rows"][1][1]["st"]),
+          (name, True, "still"))
+    series = call("logs_series", {"log": name, "channels": ["Engine Speed"], "from": 19, "to": 21})
+    check(f"[{lang}] logs: chart data with knock marks", series["knock"], [20.0, 20.1])
+
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
+    call("ai_update", {"name": "ms43", "changes": {"port": port, "role": "bin_a"}})
+    ai = call("ai_start", {"name": "ms43"})
+    url, mcp_token = ai["servers"][0]["url"], ai["servers"][0]["command"].split("Bearer ")[1].rstrip('"')
+    proj = call("ai_state")["project"]
+    call("ai_project", {"folder": proj["folder"], "name": proj["name"], "server": "ms43"})
+    with open(os.path.join(proj["folder"], ".mcp.json"), encoding="utf-8") as fh:
+        _check_bridge(lang, json.load(fh)["mcpServers"]["ms43"])
+    proj = call("ai_state")["project"]
+    call("ai_project", {"folder": proj["folder"], "name": proj["name"], "server": "ms43"})
+    with open(os.path.join(proj["folder"], ".mcp.json"), encoding="utf-8") as fh:
+        _check_bridge(lang, json.load(fh)["mcpServers"]["ms43"])
+
+    def tool(tool_name, **arguments):
+        answer = mcphttp.call(url, mcp_token, [{"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                                                "params": {"name": tool_name, "arguments": arguments}}])
+        return answer[0]["result"]["content"][0]["text"]
+
+    def ping():
+        req = urllib.request.Request(base + "/api/ping", data=b"{}",
+                                     headers={"X-Token": token, "Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=30) as res:
+            return json.loads(res.read().decode("utf-8"))
+
+    try:
+        listed = tool("log_list")
+        info = tool("log_info", log=name)
+        hits = tool("log_map_hits", log=name, map="ip_iga_ron_98_pl_ivvt__n__maf")
+        rows = tool("log_rows", log=name, **{"from": 20.0, "to": 20.1})
+        check(f"[{lang}] MCP logs: log_info reports the fuel trims", info.count("STFT") >= 1, True)
+        diff = tool("firmware_diff", a=name, b="other_fw.csv")
+        check(f"[{lang}] MCP firmware_diff: the tune's maps and limits, by log firmware",
+              ("ip_iga_ron_98_pl_ivvt__n__maf" in diff, "id_n_max_mt__gear" in diff,
+               "c_gr_rax_sp" in diff, "4000×300" in diff), (True, True, True, True))
+        check(f"[{lang}] MCP logs: list, events, cells, rows",
+              (name in listed and "stock.bin" in listed, "#2" in info and "-3" in info,
+               "[1,1]" in hits and "-3" in hits, len(rows.splitlines())), (True, True, True, 4))
+        cmp_text = tool("log_compare", before=name, after="other_fw.csv", map="ip_iga_ron_98_pl_ivvt__n__maf")
+        check(f"[{lang}] MCP logs: before/after comparison", ("[1,1]" in cmp_text, "->" in cmp_text),
+              (True, True))
+        trim_text = tool("log_map_hits", log=name, map="ip_iga_ron_98_pl_ivvt__n__maf",
+                         value_channel="Short Term Fuel Trim Bank 1")
+        check(f"[{lang}] MCP logs: a fuel trim per cell, closed loop added by default",
+              ("closed_loop" in trim_text, "Short Term Fuel Trim Bank 1" in trim_text), (True, True))
+        before_note = tool("log_info", log=name)
+        noted = call("logs_note", {"log": name, "conditions": {
+            "where": "track", "fuel": "98 RON", "complaint": "rough idle", "changed": "nothing"}})
+        after_note = tool("log_info", log=name)
+        check(f"[{lang}] logs: conditions note editable after import, shown to Claude",
+              (noted["missing"], "98 RON" in after_note, "98 RON" in before_note,
+               call("logs_view", {"log": name})["conditions"]["changed"]),
+              ([], True, False, "nothing"))
+        no_car = tool("log_modes", log=name)
+        call("ai_car", {"car": {"ratios": "4.21 2.49 1.67 1.24 1.00", "final_drive": "2.93",
+                                "circumference": "1.872", "speed_sensor": "differential"}})
+        car_text = tool("car_info")
+        prop = tool("car_propose", field="mods_other", value="M30 single-mass flywheel",
+                    reason="the owner said so in the chat")
+        shown = call("ai_state")["car"]["proposals"]
+        check(f"[{lang}] car: Claude proposes, the window shows it for the owner",
+              ("mods_other" in prop, [p["field"] for p in shown]), (True, ["mods_other"]))
+        rules = open(os.path.join(os.path.dirname(folder), ".claude", "ms43-rules.md"),
+                     encoding="utf-8").read()
+        check(f"[{lang}] car profile: speeds per gear, the rules updated, log_modes runs",
+              ("38.3" in car_text, "2.93" in rules and "differential" in rules,
+               len(no_car.splitlines()) > 5), (True, True, True))
+        tool("log_show", log=name, map="ip_iga_ron_98_pl_ivvt__n__maf", **{"from": 18, "to": 24})
+        check(f"[{lang}] MCP logs: the window opens the Logs screen", ping()["show"], "logs")
+        check(f"[{lang}] logs: the window gets what to show",
+              call("logs_state", {})["view"].get("map"), "ip_iga_ron_98_pl_ivvt__n__maf")
+        call("edits_remove", {"role": "bin_a", "all": True})
+        tool("edit_propose", kind="region", target="ip_iga_ron_98_pl_ivvt__n__maf", op="add",
+             amount=-0.75, y_from=2500, y_to=2500, x_from=200, x_to=200,
+             reason="knock at 20 s", evidence_log=name)
+        tool("edit_propose", kind="region", target="ip_iga_ron_98_pl_ivvt__n__maf", op="add",
+             amount=-0.75, y_from=4000, y_to=4000, x_from=300, x_to=300,
+             reason="knock", evidence_log="other_fw.csv")
+        ed = call("edits_state", {"role": "bin_a"})
+        check(f"[{lang}] edits: evidence from the same firmware is fine, from another one is a risk",
+              ([c["evidence"] for c in ed["changes"]], [bool(c["red"]) for c in ed["changes"]]),
+              ([name, "other_fw.csv"], [False, True]))
+        call("edits_remove", {"role": "bin_a", "all": True})
+        return [st, view, over, listed, info, hits]
+    finally:
+        call("ai_stop", {"name": "ms43"})
+
+
+def _check_project(f: dict, lang: str, call) -> None:
+    """The tuning project folder for Claude Code."""
+    import json
+
+    folder = os.path.join(os.path.dirname(f["xdf"]), f"project_{lang}")
+    r = call("ai_project", {"folder": folder, "name": "Test car", "server": "ms43"})
+    res = r["project_result"]
+    skills = sorted(os.listdir(os.path.join(folder, ".claude", "skills")))
+    check(f"[{lang}] project: files written",
+          (os.path.isfile(os.path.join(folder, "CLAUDE.md")), "log-review" in skills,
+           os.path.isfile(os.path.join(folder, "tools", "ms43log.py")),
+           os.path.isdir(os.path.join(folder, "logs"))), (True, True, True, True))
+    cfg = json.load(open(os.path.join(folder, ".mcp.json"), encoding="utf-8"))["mcpServers"]["ms43"]
+    text = open(os.path.join(folder, ".claude", "ms43-rules.md"), encoding="utf-8").read()
+    claude_md = open(os.path.join(folder, "CLAUDE.md"), encoding="utf-8").read()
+    settings = json.load(open(os.path.join(folder, ".claude", "settings.json"), encoding="utf-8"))
+    check(f"[{lang}] project: CLAUDE.md imports the rules, settings deny edits and set UTF-8",
+          ("@.claude/ms43-rules.md" in claude_md,
+           "Edit(/.claude/skills/log-review/**)" in settings["permissions"]["deny"],
+           settings["env"]["PYTHONUTF8"], "SessionStart" in settings.get("hooks", {}),
+           os.path.isfile(os.path.join(folder, "analysis", "STATE.md")),
+           ".mcp.json" in open(os.path.join(folder, ".gitignore"), encoding="utf-8").read()),
+          (True, True, "1", True, True, True))
+    with open(os.path.join(folder, "CLAUDE.md"), "w", encoding="utf-8") as fh:
+        fh.write("# My car\nE30 with M54B30, ZF gearbox.\n")
+    settings["permissions"]["allow"] = ["Bash(git status)"]
+    with open(os.path.join(folder, ".claude", "settings.json"), "w", encoding="utf-8") as fh:
+        json.dump(settings, fh)
+    call("ai_project", {"folder": folder, "name": "Test car", "server": "ms43"})
+    call("ai_project", {"folder": folder, "name": "Test car", "server": "ms43"})
+    claude_md = open(os.path.join(folder, "CLAUDE.md"), encoding="utf-8").read()
+    settings = json.load(open(os.path.join(folder, ".claude", "settings.json"), encoding="utf-8"))
+    check(f"[{lang}] project: the owner's CLAUDE.md and settings stay, the import is added once",
+          (claude_md.startswith("# My car"), claude_md.count("@.claude/ms43-rules.md"),
+           settings["permissions"].get("allow")), (True, 1, ["Bash(git status)"]))
+    import subprocess
+    hook = subprocess.run([sys.executable, os.path.join(folder, ".claude", "hooks", "session_check.py")],
+                          capture_output=True, text=True, timeout=30)
+    check(f"[{lang}] project: the session hook runs and reads the state file",
+          (hook.returncode, "STATE.md" in hook.stdout), (0, True))
+    check(f"[{lang}] project: connected to the live server through the bridge",
+          (cfg["type"], cfg["env"]["MS43_URL"] in text, bool(cfg["env"]["MS43_TOKEN"]),
+           os.path.isfile(cfg["args"][0])), ("stdio", True, True, True))
+    check(f"[{lang}] project: placeholders filled", "{" not in text.replace("{n}", ""), True)
+    skill = os.path.join(folder, ".claude", "skills", "ignition", "SKILL.md")
+    with open(skill, "a", encoding="utf-8") as fh:
+        fh.write("\nMy own note.\n")
+    os.remove(os.path.join(folder, "tools", "ms43log.py"))
+    again = call("ai_project", {"folder": folder, "name": "Test car", "server": "ms43"})["project_result"]
+    check(f"[{lang}] project: an owner-edited file is kept, a missing one restored",
+          (again["kept"], "tools/ms43log.py" in again["written"]),
+          ([".claude/skills/ignition/SKILL.md"], True))
+    check(f"[{lang}] project: remembered", call("ai_state")["project"]["exists"], True)
+    check(f"[{lang}] project: first run wrote everything", len(res["written"]) >= 8, True)
+
+
+def test_history() -> None:
+    import shutil
+    import tempfile
+
+    from ms43diff import project
+
+    tmp = tempfile.mkdtemp(prefix="ms43hist_")
+    saved = os.environ.get("HOME"), os.environ.get("USERPROFILE")
+    try:
+        os.environ["HOME"] = os.environ["USERPROFILE"] = tmp
+        folder = os.path.join(tmp, "tuner")
+        os.makedirs(folder)
+        before = project.has_history(folder)
+        key = "".join(c if c.isalnum() else "-" for c in os.path.abspath(folder))
+        os.makedirs(os.path.join(tmp, ".claude", "projects", key))
+        open(os.path.join(tmp, ".claude", "projects", key, "s.jsonl"), "w").close()
+        check("an earlier Claude Code conversation of the project is found",
+              (before, project.has_history(folder)), (False, True))
+    finally:
+        for k, v in zip(("HOME", "USERPROFILE"), saved):
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def _check_bridge(lang: str, cfg: dict) -> None:
+    """The bridge Claude Code starts: passes requests to the window; with the window closed
+    it still lists the tools and says that the window is closed."""
+    import json
+    import socket
+    import subprocess
+
+    def run(url: str) -> list:
+        msgs = [{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-06-18"}},
+                {"jsonrpc": "2.0", "method": "notifications/initialized"},
+                {"jsonrpc": "2.0", "id": 2, "method": "tools/list"},
+                {"jsonrpc": "2.0", "id": 3, "method": "tools/call",
+                 "params": {"name": "firmware_info", "arguments": {}}}]
+        env = {**os.environ, **cfg["env"], "MS43_URL": url}
+        proc = subprocess.run([sys.executable, cfg["args"][0]], env=env, capture_output=True,
+                              input="\n".join(json.dumps(m) for m in msgs) + "\n",
+                              text=True, encoding="utf-8", timeout=60)
+        return [json.loads(line) for line in proc.stdout.splitlines() if line.strip()]
+
+    live = run(cfg["env"]["MS43_URL"])
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        dead_port = sock.getsockname()[1]
+    closed = run(f"http://127.0.0.1:{dead_port}/mcp")
+    tools = lambda a: len(a[1]["result"]["tools"])  # noqa: E731
+    text = lambda a: a[2]["result"]["content"][0]["text"]  # noqa: E731
+    check(f"[{lang}] bridge: the open window answers through it",
+          (len(live), tools(live) > 20, live[2]["result"]["isError"]), (3, True, False))
+    check(f"[{lang}] bridge: window closed - tools still listed, the call says so",
+          (len(closed), tools(closed) == tools(live), "window is closed" in text(closed),
+           closed[2]["result"]["isError"]), (3, True, True, True))
+
+
+def test_logger() -> None:
+    """The own logger against an emulated ECU: test, record, lose and regain the link."""
+    import json
+    import shutil
+    import tempfile
+    import time
+
+    import tests_fixtures
+    from ms43diff import ds2logger, tplog
+    from ms43diff.adx import Adx
+
+    print("\n--- Logger (emulated ECU) ---")
+    tmp = tempfile.mkdtemp(prefix="ms43logger_")
+    try:
+        adx_path = os.path.join(tmp, "test.adx")
+        with open(adx_path, "w", encoding="utf-8") as fh:
+            fh.write(tests_fixtures.ADX)
+        ecu = tests_fixtures.FakeEcu()
+        res = ds2logger.test_connection(adx_path, lambda adx: ecu)
+        check("logger: connection test reads a packet", (res["ok"], res["values"]["Engine Speed"]),
+              (True, 801.0))
+        check("logger: the journal has every step, the ECU is back at 9600",
+              ([l["text"] for l in res["journal"] if l["dir"] in ("tx", "rx")], ecu.ecu_baud),
+              (["FASTCMD", "OKREPLY", "DATAREQUEST", "DATAREPLY", "SLOWCMD", "OKREPLYFAST"], 9600))
+        silent = tests_fixtures.FakeEcu()
+        silent.ecu_baud = 1
+        res = ds2logger.test_connection(adx_path, lambda adx: silent)
+        check("logger: no ECU is reported, not hidden", (res["ok"], bool(res["error"])), (False, True))
+        session = ds2logger.Session(Adx(adx_path), tests_fixtures.FakeEcu(), ds2logger.Journal(None))
+        try:
+            session.send(session.adx.commands["ERASE"])
+            sent = "sent"
+        except ds2logger.Ds2Error:
+            sent = "refused"
+        check("logger: a command outside the ADX macros is never sent", sent, "refused")
+        ecu = tests_fixtures.FakeEcu()
+        done = []
+        rec = ds2logger.Recorder(adx_path, lambda adx: ecu, os.path.join(tmp, "logs"), done.append)
+        rec.start()
+        time.sleep(0.3)
+        ecu.drop = 6                                   # the link drops ...
+        ecu.ecu_baud = 125000                          # ... and the ECU stays at the fast rate
+        time.sleep(3.0)
+        rec.stop()
+        check("logger: recorded, lost the link and reconnected",
+              (rec.status["state"], rec.status["rows"] > 50, rec.status["errors"] >= 5, len(done)),
+              ("stopped", True, True, 1))
+        log = tplog.load(done[0])
+        journal = [json.loads(line) for line in open(rec.raw_path, encoding="utf-8")]
+        check("logger: the CSV loads like a TunerPro log and shows the gap",
+              (log.col("Engine Speed")[0], len(tplog.quality(log)["gaps"]) >= 1), (801.0, True))
+        check("logger: the raw journal notes the loss and the reconnect",
+              ["connection lost, reconnecting" in [j.get("text") for j in journal],
+               sum(1 for j in journal if j.get("text") == "connected")], [True, 2])
+        check("logger: the ECU is left at 9600 after stop", ecu.ecu_baud, 9600)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_xdl() -> None:
+    """A TunerPro .xdl decoded with its ADX, then added to a project like a CSV."""
+    import json
+    import shutil
+    import tempfile
+
+    import tests_fixtures
+    from ms43diff import adx, tplog
+
+    print("\n--- TunerPro .xdl ---")
+    tmp = tempfile.mkdtemp(prefix="ms43xdl_")
+    try:
+        adx_path = os.path.join(tmp, "test.adx")
+        with open(adx_path, "w", encoding="utf-8") as fh:
+            fh.write(tests_fixtures.ADX)
+        rows = [(i * 50, 800 + 10 * i, 184, 128 - (8 if i == 3 else 0), 4 if i > 6 else 0,
+                 1 if i % 2 else 2) for i in range(10)]
+        src = os.path.join(tmp, "drive.xdl")
+        with open(src, "wb") as fh:
+            fh.write(tests_fixtures.xdl(rows))
+        out = os.path.join(tmp, "drive.csv")
+        info = adx.xdl_to_csv(src, adx_path, out)
+        check("xdl: every data packet decoded", (info["rows"], info["channels"], info["bad_packets"]),
+              (10, 8, 0))
+        log = tplog.load(out)
+        check("xdl: 16-bit little-endian value with a mask, units",
+              (log.col("Engine Speed")[2], log.units.get("Engine Speed")), (820.0, "rpm"))
+        check("xdl: linked channel and lookup table",
+              (log.col("Engine Speed Half")[2], log.col("Table Flag")[1], log.col("Table Flag")[2]),
+              (410.0, 1.0, 0.0))
+        check("xdl: bitmask as ON/OFF, time in seconds",
+              (log.col("Trailing Throttle Fuel Cut")[6], log.col("Trailing Throttle Fuel Cut")[7],
+               log.time[9]), (0.0, 1.0, 0.45))
+        check("xdl: integer output drops the fraction like TunerPro (rpm high bits in the gear byte)",
+              (log.col("Current Gear (Calculated)")[2], 0x83 / 32 > 4), (4.0, True))
+        check("xdl: a flag without a parent packet is read from the data packet",
+              (log.col("Engine Misfire")[0], log.col("Engine Misfire")[7]), (0.0, 0.0))
+        check("xdl: knock found in the decoded log", [e["start"] for e in tplog.knock_events(log)],
+              [0.15])
+        fw = os.path.join(tmp, "fw.bin")
+        with open(fw, "wb") as fh:
+            fh.write(b"\0" * 64)
+        try:
+            tplog.add_log(src, os.path.join(tmp, "logs"), fw, adx_path)
+            no_adx = "added"
+        except tplog.LogError:
+            no_adx = "refused"
+        check("xdl: refused without its ADX", no_adx, "refused")
+        dest = tplog.add_log(src, os.path.join(tmp, "logs"), fw, adx_path, "", adx_path)
+        binding = tplog.read_binding(dest)
+        check("xdl: added as CSV, the raw file kept, the ADX remembered",
+              (os.path.basename(dest), os.path.isfile(os.path.join(tmp, "logs", binding["raw"])),
+               binding["adx"] == os.path.abspath(adx_path), len(tplog.list_logs(os.path.join(tmp, "logs")))),
+              ("drive.csv", True, True, 1))
+        with open(tplog.binding_path(dest), encoding="utf-8") as fh:
+            old = json.load(fh)
+        old.pop("decoder")                              # as if made by the first decoder
+        with open(tplog.binding_path(dest), "w", encoding="utf-8") as fh:
+            json.dump(old, fh)
+        stale = tplog.redecode_status(dest)
+        tplog.redecode(dest)
+        check("xdl: a log from an older decoder is offered and decoded again",
+              (stale, tplog.redecode_status(dest), tplog.load(dest).n), ("old", "", 10))
+        bad = os.path.join(tmp, "other.adx")
+        with open(bad, "w", encoding="utf-8") as fh:
+            fh.write(tests_fixtures.ADX.replace("0x0000AAAA", "0x0000CCCC"))
+        try:
+            adx.xdl_to_csv(src, bad, os.path.join(tmp, "x.csv"))
+            wrong = "decoded"
+        except adx.AdxError:
+            wrong = "refused"
+        check("xdl: a wrong ADX is refused", wrong, "refused")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_wiki_cache() -> None:
+    """A failed download never wipes a working reference; import checks the file."""
+    import json
+    import shutil
+    import tempfile
+    import urllib.error
+
+    from ms43diff import wikicache
+
+    print("\n--- Reference cache ---")
+    tmp = tempfile.mkdtemp(prefix="ms43wiki_")
+    user, bundled = os.path.join(tmp, "user"), os.path.join(tmp, "bundled")
+    os.makedirs(bundled)
+    page = {"name": "Siemens_MS43", "title": "Siemens MS43", "url": "u", "fetched": "x",
+            "sections": [{"heading": "Intro", "text": "c_conf_cat selects the catalyst"}]}
+    with open(wikicache.cache_path(bundled), "w", encoding="utf-8") as fh:
+        json.dump({"source": "s", "fetched": "2026", "pages": [page]}, fh)
+    saved = (wikicache.user_dir, wikicache.bundled_dir, wikicache.urllib.request.urlopen)
+
+    def offline(*_a, **_k):
+        raise urllib.error.URLError("no route")
+
+    try:
+        wikicache.user_dir = lambda: user
+        wikicache.bundled_dir = lambda: bundled
+        check("bundled reference is used", len(wikicache.load(force=True)), 1)
+        os.makedirs(user)
+        with open(wikicache.cache_path(user), "w", encoding="utf-8") as fh:
+            json.dump({"pages": []}, fh)
+        check("an empty user cache does not hide the bundled one", len(wikicache.load(force=True)), 1)
+        wikicache.urllib.request.urlopen = offline
+        res = wikicache.download()
+        check("offline download writes nothing", res["written"], False)
+        check("offline download stops early", len(res["errors"]) <= 3, True)
+        check("reference survives a failed update", len(wikicache.load(force=True)), 1)
+        bad = os.path.join(tmp, "bad.json")
+        with open(bad, "w", encoding="utf-8") as fh:
+            fh.write('{"hello": 1}')
+        try:
+            wikicache.import_file(bad)
+            check("a foreign file is refused", "imported", "refused")
+        except ValueError:
+            check("a foreign file is refused", True, True)
+        res = wikicache.import_file(wikicache.cache_path(bundled))
+        check("import writes the user cache", (res["pages"], wikicache.meta()["folder"]), (1, user))
+        out = os.path.join(tmp, "copy.json")
+        check("export saves a copy", wikicache.export_file(out), 1)
+
+        def html(title, text):
+            return (f"<html><head><title>{title} - MS4X Wiki</title></head><body>"
+                    f'<div class="mw-parser-output"><h2>Intro</h2><p>{text}</p></div></body></html>')
+
+        listing = {"query": {"allpages": [{"title": t_} for t_ in
+                   ("Siemens MS43", "MS43 New Feature", "Siemens MS45 Notes", "Main Page")]}}
+
+        def fake(url, timeout):
+            if "api.php" in url:
+                return json.dumps(listing)
+            if "MS43_New_Feature" in url:
+                return html("MS43 New Feature", "a new thing")
+            if "MS45" in url:
+                return html("Siemens MS45 Notes", "unlike the MS43 the MS45 ... MS43 ... MS43")
+            return html("Some page", "text of " + url.rsplit("=", 1)[-1])
+
+        saved_fetch = wikicache._fetch
+        wikicache._fetch = fake
+        try:
+            res = wikicache.download()
+            check("update finds new MS43 pages and skips the rest",
+                  (res["added"], res["skipped"]), (["MS43_New_Feature"], ["Siemens_MS45_Notes"]))
+            check("found pages count as expected", "MS43_New_Feature" in wikicache.expected_pages(), True)
+            res = wikicache.download()
+            check("skipped pages are not fetched again", (res["added"], res["skipped"]), ([], []))
+            check("an added page stays", any(p.name == "MS43_New_Feature" for p in wikicache.load()), True)
+            res = wikicache.add_pages(["Siemens_MS45_Notes"])
+            check("a skipped page can be added by hand",
+                  (res["added"], "Siemens_MS45_Notes" in wikicache.meta()["skipped"],
+                   "Siemens_MS45_Notes" in wikicache.expected_pages()), (["Siemens_MS45_Notes"], False, True))
+            # A redirect (another name of a page we have), a page with no article text
+            # (a bot check), progress stages, and the web job reporting it.
+            listing["query"]["allpages"].append({"title": "MS43"})
+            good = {"Siemens_MS43": html("Siemens MS43", "c_conf_cat selects the catalyst")}
+
+            def fake2(url, timeout):
+                if "MS43_Pinout" in url:
+                    return "<html><title>Just a moment</title><body>checking your browser</body></html>"
+                if url.endswith("title=MS43") or url.endswith("title=Siemens_MS43"):
+                    return good["Siemens_MS43"]
+                return fake(url, timeout)
+
+            wikicache._fetch = fake2
+            before = next(p for p in wikicache.load() if p.name == "Siemens_MS43_Pinout").sections
+            stages = []
+            res = wikicache.download(progress=lambda i, n, name, stage="pages": stages.append(stage))
+            pin = next(p for p in wikicache.load() if p.name == "Siemens_MS43_Pinout")
+            check("a page without article text keeps its old copy and is reported",
+                  (pin.sections == before, any(n == "Siemens_MS43_Pinout" for n, _ in res["errors"])),
+                  (True, True))
+            check("a redirect is not a missing page", ("MS43" in res["added"], res["missing"]), (False, []))
+            check("progress reports every stage", sorted(set(stages)), ["listing", "new", "pages"])
+
+            import time
+            import types
+            from ms43diff.webui import modes
+            st = types.SimpleNamespace()
+            first = modes.wiki_download(st, {})
+            for _ in range(200):
+                done = modes.wiki_progress(st, {})
+                if done["job"] and done["job"]["done"]:
+                    break
+                time.sleep(0.05)
+            check("the window updates the reference in the background with progress",
+                  (first["job"]["done"], done["job"]["done"], "message" in done), (False, True, True))
+        finally:
+            wikicache._fetch = saved_fetch
+    finally:
+        wikicache.user_dir, wikicache.bundled_dir, wikicache.urllib.request.urlopen = saved
+        wikicache.load(force=True)
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_edits_core() -> None:
+    """Edit guards that need no window: version mismatch, patches, naming."""
+    import shutil
+    import tempfile
+
+    import tests_fixtures
+    from ms43diff import edits
+    from ms43diff.binfile import BinFile, Reader
+    from ms43diff.xdf import XdfFile
+
+    print("\n--- Edits ---")
+    tmp = tempfile.mkdtemp(prefix="ms43edits_")
+    try:
+        f = tests_fixtures.build(tmp)
+        xdf = XdfFile(f["xdf"])
+        store = os.path.join(tmp, "drafts")
+        wrong = edits.Draft(store, f["target"])
+        wrong.add("value", "c_gr_rax_sp", {"value": 3.0}, "test")
+        plan = edits.plan_draft(Reader(xdf, BinFile(f["target"])), wrong)
+        check("edits refused on another software version", bool(plan.blockers), True)
+        draft = edits.Draft(store, f["stock"])
+        draft.add("patch", "Disable something", {"enable": True}, "test")
+        plan = edits.plan_draft(Reader(xdf, BinFile(f["stock"])), draft, xdf)
+        check("patch over its original bytes is accepted", (plan.ok, plan.needs_full_image), (True, True))
+        tuned = edits.Draft(store, f["tuned"])
+        tuned.add("patch", "Disable something", {"enable": True}, "test")
+        plan = edits.plan_draft(Reader(xdf, BinFile(f["tuned"])), tuned, xdf)
+        check("an applied patch writes nothing", len(plan.writes), 0)
+        draft.add("cells", "ip_iga_ron_98_pl_ivvt__n__maf", {"cells": [{"y": 2500, "x": 999, "value": 1}]},
+                  "test")
+        plan = edits.plan_draft(Reader(xdf, BinFile(f["stock"])), draft, xdf)
+        check("a cell off the axis breakpoints is refused", plan.plans[-1].ok, False)
+        check("draft survives a restart", len(edits.Draft(store, f["stock"]).changes), 2)
+        check("next file name", os.path.basename(edits.next_version_path(
+            os.path.join(tmp, "a_v3.bin"))), "a_v4.bin")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 def test_end_to_end() -> None:
@@ -427,9 +1102,6 @@ def test_end_to_end() -> None:
                 "port": ["port", "-A", f["xdf"], "-B", f["xdf_x"], f["stock"], f["tuned"],
                          f["target"], "--html", rep("p.html"), "--csv", rep("p.csv"),
                          "--pdf", rep("p.pdf")],
-                "vetune": ["vetune", f["log"], "-x", f["xdf"], "-b", f["stock"],
-                           "-m", "ip_iga_ron_98_pl_ivvt__n__maf", "--min-samples", "4",
-                           "--html", rep("v.html"), "--write", rep("v.bin")],
                 "help": ["diff", "--help"],
             }
             for name, argv in commands.items():
@@ -509,6 +1181,12 @@ def main() -> int:
     test_format()
     test_ru()
     test_i18n()
+    test_car()
+    test_history()
+    test_edits_core()
+    test_wiki_cache()
+    test_xdl()
+    test_logger()
     test_end_to_end()
     if len(sys.argv) >= 3:
         test_files(sys.argv[1], sys.argv[2])

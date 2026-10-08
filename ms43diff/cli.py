@@ -463,15 +463,36 @@ def cmd_wiki(args: argparse.Namespace) -> int:
     if args.download:
         _echo(t("Downloading MS4X Wiki pages (needs access to ms4x.net)…"))
 
-        def progress(i, n, name):
-            _echo(f"  [{i}/{n}] {name}")
+        def progress(i, n, name, stage="pages"):
+            if stage == "listing":
+                _echo(t("Reading the list of pages on the site…"))
+            else:
+                _echo(f"  [{i}/{n}] {name}")
 
         result = wikicache.download(progress=progress)
         _echo("")
         _echo(t("Pages downloaded: {n}", n=result["pages"]))
-        _echo(t("Cache: {path}", path=result["path"]))
         for name, err in result["errors"]:
             _echo(t("  failed: {name} — {error}", name=name, error=err))
+        if not result["written"]:
+            _echo(t("Nothing was downloaded; the reference was not changed."))
+            _echo(wikicache.offline_hint())
+            return 1
+        _echo(t("Cache: {path}", path=result["path"]))
+        if result["added"]:
+            _echo(t("New MS43 pages found on the site and added: {list}",
+                    list=", ".join(result["added"])))
+        if result["skipped"]:
+            _echo(t("New pages not about the MS43, skipped: {n}", n=len(result["skipped"])))
+        return 0
+
+    if args.import_file:
+        try:
+            result = wikicache.import_file(args.import_file)
+        except (OSError, ValueError) as exc:
+            _echo(str(exc))
+            return 1
+        _echo(t("Reference imported: {n} pages → {path}", n=result["pages"], path=result["path"]))
         return 0
 
     if not wikicache.available():
@@ -697,105 +718,10 @@ def cmd_multi(args: argparse.Namespace) -> int:
 # ---------------------------------------------------------------------------
 
 
-def cmd_vetune(args: argparse.Namespace) -> int:
-    from . import vetune
-
-    headers, rows = vetune.read_log(args.log)
-    guessed = vetune.guess_columns(headers)
-    chosen = {
-        "rpm": args.col_rpm or guessed.get("rpm"),
-        "load": args.col_load or guessed.get("load"),
-        "lambda": args.col_lambda or guessed.get("lambda"),
-        "target": args.col_target or guessed.get("target"),
-        "trim": args.col_trim or guessed.get("trim"),
-        "coolant": args.col_coolant or guessed.get("coolant"),
-    }
-
-    if args.columns:
-        _echo(t("Columns in the log: {cols}, rows: {rows}", cols=len(headers), rows=len(rows)))
-        _echo("")
-        for name in headers:
-            roles = [role for role, value in chosen.items() if value == name]
-            mark = ("  <- " + ", ".join(roles)) if roles else ""
-            _echo(f"  {name}{mark}")
-        _echo("")
-        _echo(t("If something is detected wrong, set it by hand: "
-                "--col-rpm / --col-load / --col-lambda / --col-target"))
-        return 0
-
-    missing = [role for role in ("rpm", "load", "lambda") if not chosen[role]]
-    if missing:
-        _echo(t("Could not find these columns in the log: {cols}", cols=", ".join(missing)))
-        _echo(t("See the list: ms43diff vetune LOG -b FIRMWARE -m MAP --columns"))
-        return 1
-
-    xdf = _load_xdf(args.xdf)
-    binf = _load_bin(args.bin)
-    reader = Reader(xdf, binf)
-    item = xdf.by_title(args.map_name)
-    if item is None:
-        pattern = _compile(args.map_name)
-        candidates = [i for i in xdf.readable_items(include_axes=False)
-                      if pattern and pattern.search(i.title) and i.cell_count > 1]
-        if len(candidates) == 1:
-            item = candidates[0]
-        elif candidates:
-            _echo(t("Several maps match, be more specific:"))
-            for candidate in candidates[:20]:
-                _echo(f"  {candidate.title}   ({candidate.shape_str})")
-            return 1
-    if item is None:
-        _echo(t("Map \"{name}\" not found in this XDF.", name=args.map_name))
-        return 1
-
-    columns = vetune.LogColumns(
-        rpm=chosen["rpm"], load=chosen["load"], lam=chosen["lambda"],
-        target=chosen["target"], trim=chosen["trim"], coolant=chosen["coolant"],
-    )
-    result = vetune.analyse(
-        reader, item, rows, columns,
-        mode=args.mode, fuel=args.fuel, target_lambda=args.target,
-        min_samples=args.min_samples, max_spread=args.max_spread,
-        max_step=args.max_step, delay_samples=args.delay,
-        min_coolant=args.min_coolant, smooth=not args.no_smooth,
-        steady_rpm=args.steady_rpm, steady_load=args.steady_load,
-    )
-    _echo(report.vetune_console_report(reader, result))
-
-    if args.html:
-        report.write_vetune_html(reader, result, args.html,
-                                 log_name=os.path.basename(args.log))
-        _echo(t("HTML report: {path}", path=os.path.abspath(args.html)))
-
-    if args.write:
-        if os.path.abspath(args.write) == os.path.abspath(args.bin):
-            raise SystemExit(t("Refused: cannot write over the source firmware."))
-        if os.path.exists(args.write) and not args.force:
-            raise SystemExit(t("File {path} already exists. Add --force.", path=args.write))
-        info = vetune.write_tuned_bin(reader, item, result, args.write)
-        _echo("")
-        _echo(t("Cells written: {n}", n=info["cells"])
-              + (t(", did not fit: {n}", n=info["clipped"]) if info["clipped"] else ""))
-        _echo(t("New file: {path}", path=os.path.abspath(info["path"])))
-        _echo("")
-        _echo(t("CHECKSUMS ARE NOT RECALCULATED — do it in TunerPro."))
-    return 0
-
-
 def cmd_gui(args: argparse.Namespace) -> int:
-    if args.classic:
-        from .gui import run
-
-        return run()
     from .webui import run
 
     return run()
-
-
-def cmd_mcp(args: argparse.Namespace) -> int:
-    from .mcpserver import serve
-
-    return serve(args.xdf, args.bin)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -916,6 +842,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("query", nargs="?", help=t("what to search for in the reference"))
     p.add_argument("--download", action="store_true",
                    help=t("download/update the copy of the site (needs access to ms4x.net)"))
+    p.add_argument("--import", dest="import_file", metavar="FILE",
+                   help=t("use a reference file (ms4x_wiki.json) copied from another computer"))
     p.add_argument("--list", action="store_true", help=t("list of pages"))
     p.add_argument("--page", help=t("show a whole page"))
     p.add_argument("--param", help=t("what the wiki says about this XDF parameter"))
@@ -926,55 +854,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("-l", "--limit", type=int, default=15)
     p.set_defaults(func=cmd_wiki)
 
-    # vetune
-    p = sub.add_parser("vetune", help=t("tune a map from a wideband lambda log"))
-    p.add_argument("log", help=t("CSV log with a wideband sensor"))
-    p.add_argument("-x", "--xdf", help=t(".xdf definition file"))
-    p.add_argument("-b", "--bin", required=True, help=t("firmware"))
-    p.add_argument("-m", "--map", required=True, dest="map_name",
-                   help=t("name of the VE map (e.g. ip_map_ve_1__map__n)"))
-    p.add_argument("--mode", choices=("lambda", "trim", "both"), default="lambda",
-                   help=t("where the correction comes from"))
-    p.add_argument("--fuel", choices=tuple(("gasoline", "e85", "e10", "methanol")),
-                   default="gasoline")
-    p.add_argument("--target", type=float, default=1.0,
-                   help=t("target lambda if the log has none"))
-    p.add_argument("--min-samples", type=int, default=8,
-                   help=t("samples needed in a cell before it is touched"))
-    p.add_argument("--max-step", type=float, default=0.25,
-                   help=t("maximum correction per pass (0.25 = ±25%%)"))
-    p.add_argument("--max-spread", type=float, default=0.06,
-                   help=t("maximum spread within a cell"))
-    p.add_argument("--delay", type=int, default=0,
-                   help=t("sensor reading shift, in samples"))
-    p.add_argument("--no-smooth", action="store_true", help=t("no smoothing"))
-    p.add_argument("--steady-rpm", type=float, default=250.0,
-                   help=t("max rpm jump between samples (larger — the sample is "
-                          "treated as transient and dropped)"))
-    p.add_argument("--steady-load", type=float, default=8.0,
-                   help=t("max load jump between samples"))
-    p.add_argument("--min-coolant", type=float, default=70.0,
-                   help=t("skip samples colder than this coolant temperature"))
-    p.add_argument("--col-rpm"), p.add_argument("--col-load")
-    p.add_argument("--col-lambda"), p.add_argument("--col-target")
-    p.add_argument("--col-trim"), p.add_argument("--col-coolant")
-    p.add_argument("--html", help=t("save a visual report"))
-    p.add_argument("--write", help=t("write the new map to a NEW .bin"))
-    p.add_argument("--force", action="store_true")
-    p.add_argument("--columns", action="store_true",
-                   help=t("only show which columns were found in the log"))
-    p.set_defaults(func=cmd_vetune)
-
     # gui
     p = sub.add_parser("gui", help=t("start the window interface"))
-    p.add_argument("--classic", action="store_true", help=t("the older tkinter window"))
     p.set_defaults(func=cmd_gui)
-
-    # mcp
-    p = sub.add_parser("mcp", help=t("start the MCP server for an AI assistant (stdio)"))
-    p.add_argument("-x", "--xdf", help=t(".xdf definition file"))
-    p.add_argument("-b", "--bin", help=t(".bin firmware file"))
-    p.set_defaults(func=cmd_mcp)
 
     # patches
     p = sub.add_parser("patches", help=t("check which patches are applied"))

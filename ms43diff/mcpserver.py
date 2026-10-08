@@ -9,36 +9,34 @@ context: the model keeps only a short list of tools in mind and asks for facts
 (a parameter value, a wiki article, warnings) on demand, always fresh. Nothing
 to forget or go stale — the knowledge lives in the tool, not in model memory.
 
-Protocol. MCP over stdio is JSON-RPC 2.0, one message per line. Implemented by
-hand without third-party libraries: the .exe stays small and we control the
-protocol fully. Logs go to stderr only — stdout carries the protocol and must
-not receive anything else.
+Protocol. MCP is JSON-RPC 2.0; handle() answers one message. The transport
+is the live HTTP server inside the window (mcphttp.py) — only Claude Code is
+supported, and the window owns the project files. Implemented by hand without
+third-party libraries.
 
-Read-only. The server never writes to the firmware — it analyses and explains,
-and the user edits in TunerPro. Firmware and XDF are given as command line
-arguments (--bin, --xdf). Tool descriptions are in English (they are read by
-the model); tool results follow the UI language (--lang).
+The server never writes a firmware file: edit tools (mcpedits.py) only fill a
+draft that the user turns into a new .bin in the window. Tool descriptions are in English
+(they are read by the model); tool results follow the chosen answer language.
 """
 
 from __future__ import annotations
 
 import contextvars
-import json
 import sys
 import traceback
 from typing import Any, Callable, Dict, List, Optional
 
 from . import __version__, names, wikicache, wikitrans
 from .binfile import BinFile, Reader, format_number
-from .i18n import get_lang, t
-from .xdf import OUT_TEXT, Item, XdfFile
+from .i18n import t
+from .xdf import XdfFile
 
 PROTOCOL_VERSION = "2024-11-05"
 SERVER_NAME = "ms43diff"
 
 
 def _log(*parts: Any) -> None:
-    print("[ms43-ai-tuner-mcp]", *parts, file=sys.stderr, flush=True)
+    print("[ms43-ai-tuner mcp]", *parts, file=sys.stderr, flush=True)
 
 
 # ---------------------------------------------------------------------------
@@ -73,7 +71,6 @@ class Firmware:
         return self._xdf  # type: ignore[return-value]
 
 
-STATE: Optional[Firmware] = None
 # The firmware of the server answering the current request; the HTTP server
 # (mcphttp.py) runs several servers in one process, each with its own files.
 CURRENT: "contextvars.ContextVar[Optional[Firmware]]" = contextvars.ContextVar(
@@ -85,9 +82,14 @@ CURRENT: "contextvars.ContextVar[Optional[Firmware]]" = contextvars.ContextVar(
 # ---------------------------------------------------------------------------
 
 
+NO_REFERENCE = ("NO REFERENCE: the MS4X Wiki is not loaded in the MS43 AI-Tuner window. "
+                "Tell the owner (they can load it on the Reference screen) and mark every "
+                "statement about what a parameter does as unverified.")
+
+
 def _wiki_block(title: str, translate: bool = True) -> List[str]:
     if not wikicache.available():
-        return []
+        return [NO_REFERENCE]
     out: List[str] = []
     meanings = wikicache.value_meanings(title)
     if meanings:
@@ -206,11 +208,9 @@ def map_text(title: str, max_cells: int = 400) -> str:
 
 def _require_state() -> Firmware:
     current = CURRENT.get()
-    if current is not None:
-        return current
-    if STATE is None:
+    if current is None:
         raise ValueError(t("The server has no firmware loaded."))
-    return STATE
+    return current
 
 
 # ---------------------------------------------------------------------------
@@ -236,6 +236,12 @@ def tool_firmware_info(_args: Dict) -> str:
         info = wikicache.meta()
         lines.append(t("MS4X Wiki reference: snapshot {date}, {n} pages",
                        date=info.get("fetched", "?"), n=len(wikicache.load())))
+        missing = wikicache.missing_pages()
+        if missing:
+            lines.append(t("The reference is incomplete, missing pages: {list}",
+                           list=", ".join(missing)))
+    else:
+        lines.append(NO_REFERENCE)
     return "\n".join(lines)
 
 
@@ -285,7 +291,7 @@ def tool_get_param(args: Dict) -> str:
     name = args.get("name") or ""
     if not name:
         return t("Give name — the parameter name.")
-    return dossier(name, translate=bool(args.get("translate", True)))
+    return dossier(name, translate=bool(args.get("translate", False)))
 
 
 def tool_read_map(args: Dict) -> str:
@@ -301,7 +307,7 @@ def tool_explain_value(args: Dict) -> str:
     if not name or value is None:
         return t("Give name and value.")
     if not wikicache.available():
-        return t("The reference is not loaded.")
+        return NO_REFERENCE
     meanings = wikicache.value_meanings(name)
     if not meanings:
         return t("The wiki has no value meanings for {name}.", name=name)
@@ -325,12 +331,12 @@ def tool_search_wiki(args: Dict) -> str:
     if not query:
         return t("Give query.")
     if not wikicache.available():
-        return t("The reference is not loaded. Update it: ms43diff wiki --download")
+        return NO_REFERENCE
     limit = int(args.get("limit") or 8)
     sections = wikicache.search(query, limit=limit)
     if not sections:
         return t("Nothing found.")
-    translate = bool(args.get("translate", True))
+    translate = bool(args.get("translate", False))
     out: List[str] = []
     for section in sections:
         out.append(f"## {section.page} / {section.heading}")
@@ -351,7 +357,7 @@ def tool_wiki_page(args: Dict) -> str:
     if page is None:
         avail = ", ".join(n for n, _, _ in wikicache.page_names())
         return t("Page not found. Available: {avail}", avail=avail)
-    translate = bool(args.get("translate", True))
+    translate = bool(args.get("translate", False))
     out = [f"# {page.title}", page.url, ""]
     for section in page.sections:
         out.append(f"## {section.heading}")
@@ -363,9 +369,9 @@ def tool_wiki_page(args: Dict) -> str:
 
 def tool_cautions(args: Dict) -> str:
     if not wikicache.available():
-        return t("The reference is not loaded.")
+        return NO_REFERENCE
     sections = wikicache.cautions(args.get("page"))
-    translate = bool(args.get("translate", True))
+    translate = bool(args.get("translate", False))
     out = [t("MS4X Wiki warnings (\"how not to break anything\"):"), ""]
     for section in sections:
         out.append(f"• {section.page} / {section.heading}")
@@ -417,7 +423,9 @@ TOOLS: List[Dict[str, Any]] = [
             "properties": {
                 "name": {"type": "string", "description": "parameter name, e.g. c_conf_cat"},
                 "translate": {"type": "boolean",
-                              "description": "translate the wiki in Russian mode (default yes)"},
+                              "description": "true: a rough word-by-word Russian translation of the "
+                                             "wiki; default: the English original (translate it "
+                                             "yourself for the owner — it is more accurate)"},
             },
             "required": ["name"],
         },
@@ -459,7 +467,8 @@ TOOLS: List[Dict[str, Any]] = [
             "properties": {
                 "query": {"type": "string"},
                 "limit": {"type": "integer"},
-                "translate": {"type": "boolean"},
+                "translate": {"type": "boolean",
+                              "description": "true: rough word-by-word Russian; default: original"},
             },
             "required": ["query"],
         },
@@ -472,7 +481,8 @@ TOOLS: List[Dict[str, Any]] = [
             "type": "object",
             "properties": {
                 "name": {"type": "string"},
-                "translate": {"type": "boolean"},
+                "translate": {"type": "boolean",
+                              "description": "true: rough word-by-word Russian; default: original"},
             },
             "required": ["name"],
         },
@@ -486,12 +496,22 @@ TOOLS: List[Dict[str, Any]] = [
             "type": "object",
             "properties": {
                 "page": {"type": "string"},
-                "translate": {"type": "boolean"},
+                "translate": {"type": "boolean",
+                              "description": "true: rough word-by-word Russian; default: original"},
             },
         },
         "_fn": tool_cautions,
     },
 ]
+
+def _edit_tools() -> List[Dict[str, Any]]:
+    from .mcpedits import TOOLS as EDIT_TOOLS
+    from .mcplogs import TOOLS as LOG_TOOLS
+
+    return EDIT_TOOLS + LOG_TOOLS
+
+
+TOOLS += _edit_tools()
 
 _TOOL_BY_NAME: Dict[str, Callable[[Dict], str]] = {tool["name"]: tool["_fn"] for tool in TOOLS}
 
@@ -556,43 +576,3 @@ def handle(message: Dict) -> Optional[Dict]:
     if request_id is not None:
         return _error(request_id, -32601, f"Method not supported: {method}")
     return None
-
-
-def serve(xdf_path: Optional[str], bin_path: Optional[str]) -> int:
-    """Run the MCP server stdio loop."""
-    global STATE
-    STATE = Firmware(xdf_path, bin_path)
-
-    # The protocol is strictly UTF-8. The client starts the server as a
-    # subprocess, and on Windows the default stream encoding may be a legacy
-    # code page: without this, non-ASCII answers fail with UnicodeEncodeError.
-    for stream in (sys.stdin, sys.stdout):
-        try:
-            stream.reconfigure(encoding="utf-8", newline="\n")
-        except (AttributeError, ValueError):
-            pass
-
-    _log(f"ms43diff MCP {__version__} started, lang={get_lang()}. "
-         f"XDF={xdf_path or '-'} BIN={bin_path or '-'}")
-
-    stdin = sys.stdin
-    stdout = sys.stdout
-    for raw in stdin:
-        line = raw.strip()
-        if not line:
-            continue
-        try:
-            message = json.loads(line)
-        except ValueError:
-            _log("not JSON:", line[:120])
-            continue
-        try:
-            response = handle(message)
-        except Exception as exc:  # noqa: BLE001
-            _log("handling failed:", exc)
-            response = _error(message.get("id"), -32603, str(exc))
-        if response is not None:
-            stdout.write(json.dumps(response, ensure_ascii=False) + "\n")
-            stdout.flush()
-    _log("stdin closed, exiting")
-    return 0

@@ -64,6 +64,13 @@ class DialogThread:
 
         return self._run(job)
 
+    def pick_folder(self, title: str, initial: str = "") -> str:
+        def job(root, filedialog):
+            return filedialog.askdirectory(parent=root, title=title, initialdir=initial or None,
+                                           mustexist=False)
+
+        return self._run(job)
+
     def save_file(self, title: str, types: FileTypes, default_name: str,
                   initial_dir: str = "") -> str:
         ext = os.path.splitext(default_name)[1]

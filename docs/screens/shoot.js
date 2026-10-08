@@ -64,21 +64,6 @@ const [url, out, lang] = process.argv.slice(2);
   await page.waitForTimeout(300);
   await shot("patches");
 
-  // VE tuning
-  await nav("ve");
-  await page.waitForSelector("#btnVe");
-  await page.fill("#veMin", "6");
-  await page.click("#btnVe");
-  await page.waitForSelector("table.map");
-  await page.evaluate(() => {
-    const head = document.querySelector("#btnVeWrite").parentElement.parentElement;
-    head.scrollIntoView({ block: "start" });
-    window.scrollBy(0, -20);
-    document.querySelector("#view").scrollTop -= 20;
-  });
-  await page.waitForTimeout(300);
-  await shot("ve");
-
   // reference: the warnings list, first section open (skipped for the public
   // README, whose screenshots are taken without the wiki: NO_WIKI=1)
   if (process.env.NO_WIKI !== "1") {
@@ -92,22 +77,48 @@ const [url, out, lang] = process.argv.slice(2);
   await shot("wiki");
   }
 
-  // AI assistant
+  // AI assistant: the live server started and checked, the tuning project below
   await nav("ai");
   await page.waitForSelector("[data-ai-add]");
   await page.click('[data-ai="ai_start"]');
   await page.waitForSelector('[data-ai="ai_check"]:not([disabled])');
   await page.click('[data-ai="ai_check"]');
   await page.waitForTimeout(1500);
-  // the demo runs on Linux: show the usual Windows path of the Claude Desktop config
+  // the demo runs on Linux in a temp folder: show a usual Windows path, hide the token
   await page.evaluate(() => {
+    const f = document.getElementById("projFolder");
+    if (f) f.value = "C:\\Tuning\\E46 330i";
     for (const el of document.querySelectorAll("#view *")) {
-      if (el.children.length === 0 && el.textContent.includes("claude_desktop_config.json")) {
-        el.textContent = "C:\\Users\\you\\AppData\\Roaming\\Claude\\claude_desktop_config.json";
+      if (el.children.length === 0 && el.textContent.includes("Bearer ")) {
+        el.textContent = el.textContent.replace(/Bearer [^"\s]+/, "Bearer …");
       }
     }
   });
   await shot("ai");
+  // the car profile: picked from lists, measured gears and Claude's proposal waiting
+  await page.evaluate(() => document.getElementById("btnCarCal").closest("section").scrollIntoView());
+  await page.waitForTimeout(300);
+  await shot("car");
+
+  // edits: the AI draft for firmware B, the ignition change opened as a difference
+  await nav("edits");
+  await page.click('[data-fwkey="edits"][data-fw="bin_b"]').catch(() => {});
+  await page.waitForSelector(".row.edit");
+  await page.click('.row.edit[data-title="ip_iga_ron_98_pl_ivvt__n__maf"] .mapbtn');
+  await page.waitForSelector(".row.edit .mapbox table.map");
+  await page.waitForTimeout(400);
+  await shot("edits");
+
+  // logs: the newer log over the ignition map, compared with the one before the flash
+  await nav("logs");
+  await page.waitForSelector("table.lgmap");
+  await page.click('[data-lg="2026-10-07_cruise.csv"]');
+  await page.waitForSelector("table.lgmap");
+  await page.waitForTimeout(400);
+  await shot("logs");
+  await page.evaluate(() => document.querySelector("table.lgmap").closest("section").scrollIntoView());
+  await page.waitForTimeout(300);
+  await shot("logs-map");
 
   console.log("errors:", errors);
   await browser.close();

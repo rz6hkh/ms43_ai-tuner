@@ -1,6 +1,6 @@
 name: Build Windows release
 
-# Builds ms43-ai-tuner.exe and ms43-ai-tuner-mcp.exe on Windows and attaches them to a
+# Builds ms43-ai-tuner.exe on Windows and attaches it to a
 # GitHub Release. Two triggers:
 #   * pushing a tag like v1.0.0  -> creates a release with that tag;
 #   * manually (Actions -> Run workflow) -> only builds the artifacts.
@@ -32,7 +32,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install build dependencies
-        run: python -m pip install --upgrade pip pyinstaller reportlab
+        run: python -m pip install --upgrade pip pyinstaller reportlab pyserial
 
       - name: Self-test
         run: python selftest.py
@@ -47,10 +47,26 @@ jobs:
         run: >-
           python -c "from ms43diff import wikicache as w;
           r = w.download(folder=w.bundled_dir());
-          print('pages:', r['pages'], 'errors:', r['errors'])"
+          print('pages:', r['pages'], 'errors:', r['errors']);
+          print('new MS43 pages added:', r['added']);
+          print('new pages skipped:', r['skipped'], r['listing_error'])"
 
-      - name: Build .exe
-        run: python build_exe.py
+      - name: Build .exe (with the bundled Python for Claude Code)
+        run: python build_exe.py --with-python
+
+      - name: Check what the .exe carries (wiki, project kit, bundled Python)
+        shell: pwsh
+        run: |
+          Copy-Item dist\ms43-ai-tuner.exe dist\check.exe
+          Start-Process -FilePath dist\check.exe -ArgumentList "--check","check.json" -Wait
+          Remove-Item dist\check.exe
+          Get-Content check.json
+          $c = Get-Content check.json | ConvertFrom-Json
+          if ($c.projectkit.Count -lt 6) { throw "project kit missing from the .exe" }
+          if (-not $c.serial) { throw "pyserial (the logger) missing from the .exe" }
+          if ("${{ github.repository }}" -eq "rz6hkh/ms43diff" -and $c.wiki_missing.Count -gt 0) {
+            Write-Output "::warning::the private build's MS4X Wiki is incomplete, missing: $($c.wiki_missing -join ', ')"
+          }
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
@@ -58,7 +74,6 @@ jobs:
           name: ms43-ai-tuner-windows
           path: |
             dist/*.exe
-            dist/*.bat
             dist/*.zip
           if-no-files-found: error
 
@@ -68,7 +83,6 @@ jobs:
         with:
           files: |
             dist/*.exe
-            dist/*.bat
             dist/*.zip
           generate_release_notes: true
           body: |
@@ -78,12 +92,11 @@ jobs:
             **Easiest:** download `ms43-ai-tuner-windows.zip`, unpack it into one folder and run
             `ms43-ai-tuner.exe`.
 
-            * `ms43-ai-tuner.exe` — the window: compare firmware, heat-map views, versions and
-              porting plan, patches, VE tuning, the MS4X Wiki reference, the AI assistant.
-            * `ms43-ai-tuner-mcp.exe` — the MCP server through which Claude reads your firmware.
-            * `mcp-add.bat` / `mcp-remove.bat` — connect / disconnect it to Claude Desktop by
-              dropping your `.xdf` and `.bin` onto it. The same is in the window:
-              **AI assistant → Claude Desktop → Connect / update**.
+            * `ms43-ai-tuner.exe` — the program: compare firmware, heat-map views, versions and
+              porting plan, patches, the MS4X Wiki reference, the AI assistant (a live MCP
+              server for Claude Code) and the Edits screen.
+            * `python/` (inside the zip) — Python with pandas and matplotlib that the tuning
+              project uses for log analysis; keep it next to the .exe.
 
             The MS4X Wiki reference: if this build does not carry it, download it in the app
             (**Reference → Update from site**).

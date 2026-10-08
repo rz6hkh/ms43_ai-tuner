@@ -29,16 +29,17 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from . import mcpserver
-from .i18n import lang_override, reset_lang_override
+from . import mcpedits, mcpserver
+from .i18n import lang_override, reset_lang_override, t
 
 Resolver = Callable[[], Tuple[str, str]]   # -> (xdf path, bin path)
 
 
 class McpHttpServer:
     def __init__(self, name: str, port: int, token: str, resolver: Resolver,
-                 lang: Optional[str] = None):
+                 lang: Optional[str] = None, workspace: Any = None):
         self.name = name
+        self.workspace = workspace      # the window: drafts, patchlist, screens
         self.port = port
         self.token = token
         self.resolver = resolver
@@ -92,11 +93,13 @@ class McpHttpServer:
 
     def handle(self, message: Dict) -> Optional[Dict]:
         fw_token = mcpserver.CURRENT.set(self.firmware())
+        ws_token = mcpedits.WORKSPACE.set(self.workspace)
         lang_token = lang_override(self.lang)
         try:
             return mcpserver.handle(message)
         finally:
             reset_lang_override(lang_token)
+            mcpedits.WORKSPACE.reset(ws_token)
             mcpserver.CURRENT.reset(fw_token)
 
 
@@ -188,3 +191,25 @@ def call(url: str, token: str, messages: List[Dict], timeout: float = 30) -> Lis
         if text:
             answers.append(json.loads(text))
     return answers
+
+
+# Messages "Check" sends: handshake, tool list and one real call.
+CHECK_MESSAGES = [
+    {"jsonrpc": "2.0", "id": 1, "method": "initialize",
+     "params": {"protocolVersion": "2024-11-05", "clientInfo": {"name": "check", "version": "1"}}},
+    {"jsonrpc": "2.0", "method": "notifications/initialized"},
+    {"jsonrpc": "2.0", "id": 2, "method": "tools/list"},
+    {"jsonrpc": "2.0", "id": 3, "method": "tools/call",
+     "params": {"name": "firmware_info", "arguments": {}}},
+]
+
+
+def summarize_check(answers: List[Dict]) -> Dict:
+    """Turn the answers to CHECK_MESSAGES into a short report."""
+    by_id = {a.get("id"): a for a in answers if isinstance(a, dict)}
+    tools = len(((by_id.get(2) or {}).get("result") or {}).get("tools") or [])
+    info = (by_id.get(3) or {}).get("result") or {}
+    text = "".join(c.get("text", "") for c in info.get("content") or [])
+    ok = bool(by_id.get(1, {}).get("result")) and tools > 0 and not info.get("isError")
+    return {"ok": ok, "tools": tools, "info": text,
+            "error": "" if ok else (text or t("The server did not answer as expected."))}
